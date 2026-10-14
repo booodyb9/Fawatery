@@ -99,7 +99,7 @@ fun ClientsScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .background(Color.Transparent)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -126,13 +126,13 @@ fun ClientsScreen(
 
                 Button(
                     onClick = { showAddDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoyalGold),
-                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = GlassBlue),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.testTag("add_client_button")
                 ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = DeepObsidian, modifier = Modifier.size(16.dp))
+                    Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "عميل جديد", color = DeepObsidian, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                    Text(text = "عميل جديد", color = Color.White, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
                 }
             }
         }
@@ -146,12 +146,12 @@ fun ClientsScreen(
                 placeholder = { Text("ابحث باسم العميل، المنشأة، أو رقم الهاتف..", color = TextSecondary) },
                 leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = GlassBlue) },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = RoyalGold,
-                    unfocusedBorderColor = GlassBorder,
-                    focusedContainerColor = CardBackgroundGlass,
-                    unfocusedContainerColor = CardBackgroundGlass,
+                    focusedBorderColor = GlassBlue,
+                    unfocusedBorderColor = Color(0x30007AFF),
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color(0xF4FFFFFF),
                     focusedTextColor = TextPrimary,
                     unfocusedTextColor = TextPrimary
                 )

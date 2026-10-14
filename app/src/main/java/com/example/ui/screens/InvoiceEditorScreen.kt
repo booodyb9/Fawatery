@@ -140,7 +140,7 @@ fun InvoiceEditorScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .background(Color.Transparent)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -679,12 +679,12 @@ fun InvoiceEditorScreen(
                     .fillMaxWidth()
                     .height(52.dp)
                     .testTag("issue_invoice_submit_button"),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = RoyalGold)
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = GlassBlue)
             ) {
                 Text(
                     text = "إصدار وحفظ الفاتورة الضريبية",
-                    color = DeepObsidian,
+                    color = Color.White,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                 )
             }
@@ -698,12 +698,13 @@ fun InvoiceEditorScreen(
 
 @Composable
 private fun getTextFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = RoyalGold,
-    unfocusedBorderColor = GlassBorder,
-    focusedContainerColor = CardSurfaceElevated,
-    unfocusedContainerColor = CardSurfaceElevated,
+    focusedBorderColor = GlassBlue,
+    unfocusedBorderColor = Color(0x35007AFF),
+    focusedContainerColor = Color.White,
+    unfocusedContainerColor = Color(0xF6FFFFFF),
     focusedTextColor = TextPrimary,
     unfocusedTextColor = TextPrimary,
-    focusedLabelColor = RoyalGold,
-    unfocusedLabelColor = TextSecondary
+    focusedLabelColor = GlassBlue,
+    unfocusedLabelColor = TextSecondary,
+    cursorColor = GlassBlue
 )

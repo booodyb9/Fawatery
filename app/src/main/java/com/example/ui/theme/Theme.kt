@@ -1,28 +1,28 @@
 package com.example.ui.theme
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val FawratyDarkColorScheme = darkColorScheme(
-    primary = RoyalGold,
-    onPrimary = DeepObsidian,
-    primaryContainer = RoyalGoldDark,
-    onPrimaryContainer = RoyalGoldLight,
-    secondary = GlassBlue,
+private val FawratyIosIcyColorScheme = lightColorScheme(
+    primary = IosGlassBlue,
+    onPrimary = Color.White,
+    primaryContainer = IosGlassBlueLight,
+    onPrimaryContainer = IosGlassBlueDark,
+    secondary = RoyalGold,
     onSecondary = Color.White,
-    secondaryContainer = CardSurfaceElevated,
-    onSecondaryContainer = GlassBlueLight,
+    secondaryContainer = RoyalGoldLight,
+    onSecondaryContainer = RoyalGoldDark,
     tertiary = GlassBlueLight,
-    background = DeepObsidian,
+    background = IcyBackground,
     onBackground = TextPrimary,
-    surface = CardBackgroundGlass,
+    surface = FrostedGlassCard,
     onSurface = TextPrimary,
     surfaceVariant = CardSurfaceVariant,
     onSurfaceVariant = TextSecondary,
     outline = GlassBorder,
-    outlineVariant = GlassGoldBorder
+    outlineVariant = GlassBorderSubtle
 )
 
 @Composable
@@ -30,7 +30,7 @@ fun FawratyTheme(
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
-        colorScheme = FawratyDarkColorScheme,
+        colorScheme = FawratyIosIcyColorScheme,
         typography = Typography,
         content = content
     )
@@ -38,7 +38,7 @@ fun FawratyTheme(
 
 @Composable
 fun MyApplicationTheme(
-    darkTheme: Boolean = true,
+    darkTheme: Boolean = false,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {

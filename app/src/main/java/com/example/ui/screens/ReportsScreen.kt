@@ -79,7 +79,7 @@ fun ReportsScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .background(Color.Transparent)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {

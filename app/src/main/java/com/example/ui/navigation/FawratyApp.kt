@@ -25,13 +25,11 @@ import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.outlined.Architecture
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Business
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -43,6 +41,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -59,11 +59,10 @@ import com.example.ui.screens.InvoiceDetailScreen
 import com.example.ui.screens.InvoiceEditorScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.SettingsScreen
-import com.example.ui.theme.CardBackgroundGlass
-import com.example.ui.theme.DeepObsidian
-import com.example.ui.theme.GlassBlue
-import com.example.ui.theme.GlassBorder
-import com.example.ui.theme.RoyalGold
+import com.example.ui.theme.IcyBackground
+import com.example.ui.theme.IosGlassBlue
+import com.example.ui.theme.IosShadowColor
+import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextSecondary
 import com.example.viewmodel.FawratyViewModel
 import com.example.viewmodel.NavigationTab
@@ -85,10 +84,10 @@ fun FawratyApp(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = DeepObsidian,
+            containerColor = IcyBackground,
             bottomBar = {
                 if (activeSubScreen == SubScreen.NONE) {
-                    FawratyBottomNavigation(
+                    IosFrostedBottomNavigation(
                         currentTab = currentTab,
                         onTabSelected = { viewModel.setTab(it) }
                     )
@@ -98,6 +97,15 @@ fun FawratyApp(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFFFFFFFF),
+                                Color(0xFFF2F6FA),
+                                Color(0xFFE8F0F7)
+                            )
+                        )
+                    )
                     .padding(innerPadding)
             ) {
                 AnimatedContent(
@@ -131,8 +139,11 @@ fun FawratyApp(
     }
 }
 
+/**
+ * iOS Style Frosted Glass Floating Dock Bar
+ */
 @Composable
-fun FawratyBottomNavigation(
+fun IosFrostedBottomNavigation(
     currentTab: NavigationTab,
     onTabSelected: (NavigationTab) -> Unit,
     modifier: Modifier = Modifier
@@ -149,15 +160,31 @@ fun FawratyBottomNavigation(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(CardBackgroundGlass.copy(alpha = 0.94f))
-                .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
-                .padding(vertical = 6.dp, horizontal = 4.dp)
+                .shadow(
+                    elevation = 12.dp,
+                    shape = RoundedCornerShape(26.dp),
+                    ambientColor = IosShadowColor,
+                    spotColor = IosShadowColor
+                )
+                .clip(RoundedCornerShape(26.dp))
+                .background(Color(0xEEFFFFFF))
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White,
+                            Color(0x35007AFF),
+                            Color(0x20007AFF)
+                        )
+                    ),
+                    shape = RoundedCornerShape(26.dp)
+                )
+                .padding(vertical = 6.dp, horizontal = 6.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -167,32 +194,37 @@ fun FawratyBottomNavigation(
                 items.forEach { item ->
                     val isSelected = currentTab == item.tab
                     val icon = if (isSelected) item.selectedIcon else item.unselectedIcon
-                    val color = if (isSelected) RoyalGold else TextSecondary
+                    val tintColor = if (isSelected) IosGlassBlue else TextSecondary
 
-                    Column(
+                    Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(if (isSelected) Color(0x18007AFF) else Color.Transparent)
                             .clickable { onTabSelected(item.tab) }
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
                             .testTag("nav_${item.tab.name.lowercase()}"),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = item.label,
-                            tint = color,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = item.label,
-                            color = color,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 10.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = item.label,
+                                tint = tintColor,
+                                modifier = Modifier.size(22.dp)
                             )
-                        )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = item.label,
+                                color = tintColor,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            )
+                        }
                     }
                 }
             }

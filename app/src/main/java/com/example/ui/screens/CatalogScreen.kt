@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,7 +69,7 @@ fun CatalogScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .background(Color.Transparent)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -219,15 +220,15 @@ fun CatalogScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(42.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = RoyalGold),
-                        shape = RoundedCornerShape(10.dp)
+                            .height(46.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GlassBlue),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = DeepObsidian, modifier = Modifier.size(16.dp))
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "إصدار فاتورة بهذا المنتج",
-                            color = DeepObsidian,
+                            color = Color.White,
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                         )
                     }

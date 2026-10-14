@@ -55,6 +55,7 @@ import com.example.ui.theme.GlassBlue
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassGoldBorder
 import com.example.ui.theme.RoyalGold
+import com.example.ui.theme.StatusOverdue
 import com.example.ui.theme.StatusPaid
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -85,7 +86,7 @@ fun SettingsScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .background(Color.Transparent)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -210,7 +211,7 @@ fun SettingsScreen(
                         Switch(
                             checked = autoRemind3Days,
                             onCheckedChange = { autoRemind3Days = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = RoyalGold, checkedTrackColor = CardSurfaceElevated)
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = GlassBlue)
                         )
                     }
 
@@ -237,7 +238,7 @@ fun SettingsScreen(
                         Switch(
                             checked = autoRemindDueDate,
                             onCheckedChange = { autoRemindDueDate = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = RoyalGold, checkedTrackColor = CardSurfaceElevated)
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = GlassBlue)
                         )
                     }
 
@@ -264,7 +265,7 @@ fun SettingsScreen(
                         Switch(
                             checked = autoRemindOverdue,
                             onCheckedChange = { autoRemindOverdue = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.error, checkedTrackColor = CardSurfaceElevated)
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StatusOverdue)
                         )
                     }
                 }
@@ -394,13 +395,13 @@ fun SettingsScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = RoyalGold),
-                shape = RoundedCornerShape(10.dp)
+                    .height(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = GlassBlue),
+                shape = RoundedCornerShape(14.dp)
             ) {
-                Icon(imageVector = Icons.Default.Save, contentDescription = null, tint = DeepObsidian, modifier = Modifier.size(16.dp))
+                Icon(imageVector = Icons.Default.Save, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "حفظ كافة التعديلات", color = DeepObsidian, fontWeight = FontWeight.Bold)
+                Text(text = "حفظ كافة التعديلات", color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -412,12 +413,13 @@ fun SettingsScreen(
 
 @Composable
 private fun getSettingsFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = RoyalGold,
-    unfocusedBorderColor = GlassBorder,
-    focusedContainerColor = CardSurfaceElevated,
-    unfocusedContainerColor = CardSurfaceElevated,
+    focusedBorderColor = GlassBlue,
+    unfocusedBorderColor = Color(0x35007AFF),
+    focusedContainerColor = Color.White,
+    unfocusedContainerColor = Color(0xF6FFFFFF),
     focusedTextColor = TextPrimary,
     unfocusedTextColor = TextPrimary,
-    focusedLabelColor = RoyalGold,
-    unfocusedLabelColor = TextSecondary
+    focusedLabelColor = GlassBlue,
+    unfocusedLabelColor = TextSecondary,
+    cursorColor = GlassBlue
 )

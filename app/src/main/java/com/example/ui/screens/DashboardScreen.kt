@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -76,6 +77,7 @@ import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.GlassBlue
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassGoldBorder
+import com.example.ui.theme.IosShadowColor
 import com.example.ui.theme.RoyalGold
 import com.example.ui.theme.RoyalGoldLight
 import com.example.ui.theme.StatusPaid
@@ -116,7 +118,7 @@ fun DashboardScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .background(Color.Transparent)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -136,8 +138,8 @@ fun DashboardScreen(
                         contentDescription = "Fawraty Logo",
                         modifier = Modifier
                             .size(46.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(1.dp, GlassGoldBorder, RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
@@ -149,7 +151,7 @@ fun DashboardScreen(
                         Text(
                             text = company.companyName.take(30) + "..",
                             color = RoyalGold,
-                            style = MaterialTheme.typography.labelSmall
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium)
                         )
                     }
                 }
@@ -161,7 +163,7 @@ fun DashboardScreen(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(CardBackgroundGlass)
+                            .background(Color.White)
                             .border(1.dp, if (automatedReminders.isNotEmpty()) RoyalGold else GlassBorder, CircleShape)
                             .clickable { showReminderModal = true },
                         contentAlignment = Alignment.Center
@@ -169,7 +171,7 @@ fun DashboardScreen(
                         Icon(
                             imageVector = Icons.Default.NotificationsActive,
                             contentDescription = "Reminders",
-                            tint = if (automatedReminders.isNotEmpty()) RoyalGold else TextSecondary,
+                            tint = if (automatedReminders.isNotEmpty()) StatusPending else TextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
                         if (automatedReminders.isNotEmpty()) {
@@ -186,7 +188,7 @@ fun DashboardScreen(
             }
         }
 
-        // Cinematic Architectural Hero Showcase
+        // Cinematic Architectural Hero Showcase (iOS Frosted White)
         item {
             GlassCard(
                 modifier = Modifier
@@ -202,16 +204,16 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // High-end glassmorphism overlay gradient
+                // High-end iOS frosted light glassmorphism overlay gradient
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
-                                    Color(0x20080D16),
-                                    Color(0x95080D16),
-                                    Color(0xF5080D16)
+                                    Color(0x10FFFFFF),
+                                    Color(0x60FFFFFF),
+                                    Color(0xF5FFFFFF)
                                 )
                             )
                         )
@@ -230,7 +232,7 @@ fun DashboardScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "فخامة الزجاج المعماري والتصميم النخبوي",
-                                color = RoyalGoldLight,
+                                color = RoyalGold,
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
                             )
                         }
@@ -242,9 +244,9 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "فواتير إلكترونية متوافقة كلياً مع اشتراطات هيئة الزكاة والضريبة ZATCA",
+                            text = "فواتير إلكترونية متوافقة كلياً مع اشتراطات هيئة الزكاة والضريبة",
                             color = TextSecondary,
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp)
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
                         )
                     }
                 }
@@ -611,14 +613,15 @@ fun DashboardScreen(
                         }
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = RoyalGold,
-                        unfocusedBorderColor = GlassBorder,
-                        focusedContainerColor = CardBackgroundGlass,
-                        unfocusedContainerColor = CardBackgroundGlass,
+                        focusedBorderColor = GlassBlue,
+                        unfocusedBorderColor = Color(0x30007AFF),
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color(0xEAFFFFFF),
                         focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = GlassBlue
                     )
                 )
 
@@ -901,27 +904,32 @@ fun DashboardScreen(
 fun FilterChipItem(
     title: String,
     isSelected: Boolean,
-    activeColor: Color = RoyalGold,
+    activeColor: Color = GlassBlue,
     onClick: () -> Unit
 ) {
-    val bgColor = if (isSelected) activeColor.copy(alpha = 0.2f) else CardBackgroundGlass
-    val borderColor = if (isSelected) activeColor else GlassBorder
-    val textColor = if (isSelected) activeColor else TextSecondary
+    val bgColor = if (isSelected) activeColor else Color(0xF4FFFFFF)
+    val borderColor = if (isSelected) activeColor else Color(0x35007AFF)
+    val textColor = if (isSelected) Color.White else TextPrimary
 
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
+            .shadow(
+                elevation = if (isSelected) 4.dp else 1.dp,
+                shape = RoundedCornerShape(22.dp),
+                ambientColor = IosShadowColor
+            )
+            .clip(RoundedCornerShape(22.dp))
             .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(20.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(22.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 7.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = title,
             color = textColor,
             style = MaterialTheme.typography.labelMedium.copy(
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
             )
         )
     }

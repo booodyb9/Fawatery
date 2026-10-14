@@ -34,22 +34,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.InvoiceStatus
-import com.example.ui.theme.CardBackgroundGlass
+import com.example.ui.theme.FrostedGlassCard
 import com.example.ui.theme.GlassBlue
 import com.example.ui.theme.GlassBorder
-import com.example.ui.theme.GlassGoldBorder
+import com.example.ui.theme.IosShadowColor
 import com.example.ui.theme.RoyalGold
 import com.example.ui.theme.StatusDraft
 import com.example.ui.theme.StatusDraftContainer
@@ -59,16 +59,14 @@ import com.example.ui.theme.StatusPaid
 import com.example.ui.theme.StatusPaidContainer
 import com.example.ui.theme.StatusPending
 import com.example.ui.theme.StatusPendingContainer
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
 import kotlin.math.abs
 
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    shapeRadius: Dp = 16.dp,
+    shapeRadius: Dp = 20.dp,
     borderColor: Color = GlassBorder,
-    backgroundColor: Color = CardBackgroundGlass.copy(alpha = 0.82f),
+    backgroundColor: Color = FrostedGlassCard,
     hasGoldHighlight: Boolean = false,
     onClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit
@@ -76,16 +74,16 @@ fun GlassCard(
     val borderBrush = if (hasGoldHighlight) {
         Brush.linearGradient(
             colors = listOf(
-                RoyalGold.copy(alpha = 0.6f),
-                GlassBlue.copy(alpha = 0.3f),
-                Color(0x10FFFFFF)
+                RoyalGold.copy(alpha = 0.5f),
+                GlassBlue.copy(alpha = 0.35f),
+                Color(0x30FFFFFF)
             )
         )
     } else {
         Brush.linearGradient(
             colors = listOf(
-                borderColor.copy(alpha = 0.7f),
-                Color(0x15FFFFFF),
+                borderColor.copy(alpha = 0.45f),
+                Color(0x40FFFFFF),
                 borderColor.copy(alpha = 0.2f)
             )
         )
@@ -93,6 +91,12 @@ fun GlassCard(
 
     Card(
         modifier = modifier
+            .shadow(
+                elevation = 6.dp,
+                shape = RoundedCornerShape(shapeRadius),
+                ambientColor = IosShadowColor,
+                spotColor = IosShadowColor
+            )
             .clip(RoundedCornerShape(shapeRadius))
             .then(
                 if (onClick != null) {
@@ -102,19 +106,19 @@ fun GlassCard(
         shape = RoundedCornerShape(shapeRadius),
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         border = BorderStroke(1.dp, borderBrush),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Box(modifier = Modifier.padding(0.dp)) {
-            // Subtle specular glass highlight bar at top
+            // iOS frosted specular top highlight
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(1.dp)
+                    .height(1.5.dp)
                     .background(
                         Brush.horizontalGradient(
                             listOf(
                                 Color.Transparent,
-                                if (hasGoldHighlight) RoyalGold.copy(alpha = 0.5f) else GlassBlue.copy(alpha = 0.4f),
+                                Color.White.copy(alpha = 0.95f),
                                 Color.Transparent
                             )
                         )
@@ -139,9 +143,9 @@ fun StatusBadge(
 
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(bgColor)
-            .border(0.8.dp, dotColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+            .border(0.8.dp, dotColor.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -156,8 +160,8 @@ fun StatusBadge(
             text = status.labelAr,
             color = textColor,
             style = MaterialTheme.typography.labelMedium.copy(
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.5.sp
             )
         )
     }
@@ -169,19 +173,19 @@ fun ZatcaVerificationTag(
 ) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0x2000A3FF))
-            .border(0.8.dp, GlassBlue.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0x18007AFF))
+            .border(0.8.dp, GlassBlue.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = Icons.Default.Verified,
-            contentDescription = "ZATCA Verified",
+            contentDescription = "معتمد",
             tint = GlassBlue,
-            modifier = Modifier.size(14.dp)
+            modifier = Modifier.size(15.dp)
         )
-        Spacer(modifier = Modifier.width(4.dp))
+        Spacer(modifier = Modifier.width(5.dp))
         Text(
             text = "معتمد ضريبياً (زكاة)",
             color = GlassBlue,
@@ -191,14 +195,14 @@ fun ZatcaVerificationTag(
 }
 
 /**
- * Geometric QR Code generator rendering a valid 2D matrix structure
- * matching Saudi ZATCA e-invoicing Phase 1 & 2 requirements.
+ * Geometric QR Code generator styled in iOS Ice-White with crisp dark modules
+ * and sapphire blue scanline.
  */
 @Composable
 fun ZatcaQrCodeView(
     dataString: String,
     modifier: Modifier = Modifier,
-    sizeDp: Dp = 160.dp
+    sizeDp: Dp = 150.dp
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "scan")
     val scanOffset by infiniteTransition.animateFloat(
@@ -214,19 +218,20 @@ fun ZatcaQrCodeView(
     Box(
         modifier = modifier
             .size(sizeDp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF070B12))
-            .border(1.dp, GlassGoldBorder, RoundedCornerShape(12.dp))
+            .shadow(4.dp, RoundedCornerShape(16.dp), ambientColor = IosShadowColor)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White)
+            .border(1.2.dp, Color(0x30007AFF), RoundedCornerShape(16.dp))
             .padding(10.dp),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.size(sizeDp - 20.dp)) {
             val canvasSize = size.width
-            val modules = 21 // 21x21 QR matrix size
+            val modules = 21 // 21x21 QR matrix
             val moduleSize = canvasSize / modules
 
-            val primaryColor = Color(0xFFF8FAFC)
-            val accentColor = Color(0xFFD4AF37)
+            val primaryColor = Color(0xFF0F172A)
+            val accentColor = Color(0xFF007AFF)
 
             // Draw Finder Patterns (Top-Left, Top-Right, Bottom-Left)
             fun drawFinderPattern(col: Int, row: Int) {
@@ -290,14 +295,14 @@ fun ZatcaQrCodeView(
                                 color = dotColor,
                                 topLeft = Offset(c * moduleSize + 0.5f, r * moduleSize + 0.5f),
                                 size = Size(moduleSize - 1f, moduleSize - 1f),
-                                cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+                                cornerRadius = CornerRadius(1.2.dp.toPx(), 1.2.dp.toPx())
                             )
                         }
                     }
                 }
             }
 
-            // Luxury dynamic scan line effect
+            // Sapphire blue scan line shimmer
             val scanY = canvasSize * scanOffset
             drawLine(
                 brush = Brush.horizontalGradient(

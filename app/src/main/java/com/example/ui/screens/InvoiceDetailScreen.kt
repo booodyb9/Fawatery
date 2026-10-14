@@ -112,7 +112,7 @@ fun InvoiceDetailScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .background(Color.Transparent)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -309,8 +309,8 @@ fun InvoiceDetailScreen(
         item {
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shapeRadius = 16.dp,
-                backgroundColor = Color(0xFF0C1320),
+                shapeRadius = 20.dp,
+                backgroundColor = Color.White,
                 hasGoldHighlight = true
             ) {
                 Column(
@@ -507,7 +507,7 @@ fun InvoiceDetailScreen(
                     // Calculation & Totals Summary Card
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = Color(0xFF090E17),
+                        backgroundColor = Color(0xFFF6F9FD),
                         borderColor = GlassGoldBorder
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -523,7 +523,7 @@ fun InvoiceDetailScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(text = "ضريبة القيمة المضافة (15% VAT)", color = GlassBlue, style = MaterialTheme.typography.bodyMedium)
+                                Text(text = "ضريبة القيمة المضافة (15%):", color = GlassBlue, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                                 Text(text = "${numberFormat.format(invoice.vatAmount)} ${company.currencyAr}", color = GlassBlue, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
                             }
                             Spacer(modifier = Modifier.height(8.dp))
