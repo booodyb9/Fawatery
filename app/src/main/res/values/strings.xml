@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">فاتورتي</string>
+    <string name="app_tagline">الريادة في حلول الفواتير والزجاج المعماري الفاخر</string>
+    <string name="nav_dashboard">الرئيسية</string>
+    <string name="nav_invoices">الفواتير</string>
+    <string name="nav_new_invoice">فاتورة جديدة</string>
+    <string name="nav_clients">العملاء</string>
+    <string name="nav_catalog">الكتالوج والخدمات</string>
+    <string name="nav_reports">التقارير</string>
+    <string name="nav_settings">إعدادات المنشأة</string>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "name": "فاتورتي | Fawraty",
+  "description": "نظام الفواتير الفاخر وإدارة المشاريع وعروض الأسعار - Fawraty Premium Invoicing & Glass Architectural Billing Suite",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
