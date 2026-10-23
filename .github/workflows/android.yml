@@ -40,6 +40,17 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: invoice-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
