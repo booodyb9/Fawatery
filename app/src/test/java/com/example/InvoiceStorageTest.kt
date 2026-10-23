@@ -56,6 +56,18 @@ class InvoiceStorageTest {
         assertEquals("{broken", prefs.getString("snapshot", null))
     }
 
+    @Test fun malformedDatabaseFileIsPreservedAndWritesAreBlocked() {
+        val file = context.getDatabasePath("fawraty_records.db")
+        file.parentFile!!.mkdirs()
+        val broken = "Synthetic damaged database fixture".repeat(200).toByteArray()
+        file.writeBytes(broken)
+        val repository = FawratyRepository(context)
+        assertNotNull(repository.storageError.value)
+        try { repository.generateNextInvoiceNumber(); fail("Write should be blocked") }
+        catch (_: IllegalStateException) {}
+        assertArrayEquals(broken, file.readBytes())
+    }
+
     @Test fun reminderSwitchesSurviveRecreation() {
         val options = ReminderOptions(false, true, false)
         FawratyRepository(context).updateReminderOptions(options)

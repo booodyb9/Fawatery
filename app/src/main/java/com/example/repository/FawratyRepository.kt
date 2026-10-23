@@ -204,7 +204,11 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) : java
     companion object { private val storageLock = Any() }
 }
 
-private class InvoiceDatabase(context: Context) : android.database.sqlite.SQLiteOpenHelper(context, "fawraty_records.db", null, 1) {
+private class InvoiceDatabase(context: Context) : android.database.sqlite.SQLiteOpenHelper(
+    context, "fawraty_records.db", null, 1,
+    // Android's default corruption handler deletes the file. Preserve it for recovery instead.
+    android.database.DatabaseErrorHandler { throw IllegalStateException("قاعدة البيانات غير قابلة للقراءة؛ تم الاحتفاظ بالملف للاستعادة") }
+) {
     override fun onCreate(db: android.database.sqlite.SQLiteDatabase) {
         db.execSQL("CREATE TABLE invoice_store (id INTEGER PRIMARY KEY CHECK(id = 1), payload TEXT NOT NULL)")
     }
