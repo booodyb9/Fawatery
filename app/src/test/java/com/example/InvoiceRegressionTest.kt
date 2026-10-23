@@ -16,8 +16,11 @@ import java.util.Locale
 @Config(sdk = [28])
 class InvoiceRegressionTest {
     @org.junit.Before fun resetFixtureStorage() {
+        val testContext = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        testContext.deleteDatabase("fawraty_records.db")
         androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
             .getSharedPreferences("fawraty_records", android.content.Context.MODE_PRIVATE).edit().clear().commit()
+        FawratyRepository().updateCompanyProfile(CompanyProfile(companyName = "منشأة اختبار", vatNumber = "300000000000003"))
     }
     @Test(expected = IllegalArgumentException::class)
     fun rejectsNegativeDiscount() { InvoiceItem("i", "test", 1.0, 100.0, discount = -50.0) }

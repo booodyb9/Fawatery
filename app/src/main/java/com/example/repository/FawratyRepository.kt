@@ -21,8 +21,9 @@ internal data class InvoiceStore(
 )
 
 /** Offline durable storage. Existing snapshots are never replaced when loading fails. */
-class FawratyRepository(context: Context = FawratyApplication.appContext) {
-    private val prefs = context.getSharedPreferences("fawraty_records", Context.MODE_PRIVATE)
+class FawratyRepository(context: Context = FawratyApplication.appContext) : java.io.Closeable {
+    private val legacyPrefs = context.getSharedPreferences("fawraty_records", Context.MODE_PRIVATE)
+    private val database = InvoiceDatabase(context.applicationContext)
     private val adapter = Moshi.Builder().add(KotlinJsonAdapterFactory()).build().adapter(InvoiceStore::class.java)
     private val _companyProfile = MutableStateFlow(CompanyProfile())
     val companyProfile = _companyProfile.asStateFlow()
@@ -44,8 +45,12 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) {
         }
     }
 
-    private fun read(): InvoiceStore {
-        val raw = prefs.getString("snapshot", null) ?: return InvoiceStore()
+    private fun read(db: android.database.sqlite.SQLiteDatabase = database.readableDatabase): InvoiceStore {
+        val stored = db.rawQuery("SELECT payload FROM invoice_store WHERE id = 1", null).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+        // Preserve any snapshot written by earlier development builds. Never delete the original.
+        val raw = stored ?: legacyPrefs.getString("snapshot", null) ?: return InvoiceStore()
         return requireNotNull(adapter.fromJson(raw)) { "تعذر قراءة البيانات المحفوظة" }.also {
             require(it.version == 1) { "إصدار البيانات غير مدعوم" }
         }
@@ -69,14 +74,42 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) {
 
     private fun update(transform: (InvoiceStore) -> InvoiceStore) = synchronized(storageLock) {
         check(_storageError.value == null) { _storageError.value ?: "التخزين غير متاح" }
-        val next = transform(read())
-        check(prefs.edit().putString("snapshot", adapter.toJson(next)).commit()) { "تعذر الحفظ المحلي؛ لم تُؤكد العملية" }
-        publish(next)
+        val db = database.writableDatabase
+        var next: InvoiceStore? = null
+        db.beginTransaction()
+        try {
+            val updated = transform(read(db))
+            val values = android.content.ContentValues().apply {
+                put("id", 1)
+                put("payload", adapter.toJson(updated))
+            }
+            db.insertWithOnConflict("invoice_store", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE)
+                .also { check(it != -1L) { "تعذر الحفظ المحلي؛ لم تُؤكد العملية" } }
+            db.setTransactionSuccessful()
+            next = updated
+        } finally {
+            db.endTransaction()
+        }
+        // Publish only after SQLite has successfully committed its transaction.
+        publish(requireNotNull(next))
     }
 
     fun refreshDates() = synchronized(storageLock) {
-        if (_storageError.value == null) publish(read())
+        if (_storageError.value == null) {
+            try { publish(read()) }
+            catch (_: Exception) { _storageError.value = "تعذر قراءة البيانات المحفوظة. لم يتم حذفها أو استبدالها." }
+        }
     }
+
+    private fun validateSeller(company: CompanyProfile) {
+        require(company.companyName.isNotBlank() &&
+            company.companyName.toByteArray(Charsets.UTF_8).size <= 255 &&
+            Regex("3[0-9]{13}3").matches(company.vatNumber)) {
+            "أكمل اسم المنشأة ورقمها الضريبي الصحيح من الإعدادات قبل إصدار الفاتورة"
+        }
+    }
+
+    override fun close() { database.close() }
 
     /** Reserve persistently; deleting invoices never reuses a reserved number. */
     fun generateNextInvoiceNumber(): String {
@@ -101,7 +134,13 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) {
                 ?: data.clients.find { it.name == invoice.clientName && it.company == invoice.clientCompany && it.phone == invoice.clientPhone }
             val client = existing ?: Client(UUID.randomUUID().toString(), invoice.clientName, invoice.clientCompany,
                 invoice.clientPhone, invoice.clientEmail, invoice.clientVatNumber, invoice.clientAddress)
-            saved = invoice.copy(clientId = client.id)
+            val seller = if (invoice.status == InvoiceStatus.DRAFT) null else invoice.seller ?: data.company
+            if (seller != null) validateSeller(seller)
+            saved = invoice.copy(
+                clientId = client.id,
+                seller = seller,
+                issuedAt = if (invoice.status == InvoiceStatus.DRAFT) "" else invoice.issuedAt.ifBlank { InvoiceDates.utcNow() }
+            )
             data.copy(
                 invoices = listOf(saved) + data.invoices,
                 clients = if (existing == null) listOf(client) + data.clients else data.clients
@@ -112,11 +151,17 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) {
 
     fun updateInvoiceStatus(invoiceId: String, newStatus: InvoiceStatus) {
         update { data -> data.copy(invoices = data.invoices.map { invoice ->
-            if (invoice.id != invoiceId) invoice else invoice.copy(
-                status = newStatus,
-                issuedAt = if (invoice.issuedAt.isBlank() && newStatus != InvoiceStatus.DRAFT) InvoiceDates.utcNow() else invoice.issuedAt,
-                seller = invoice.seller ?: data.company
-            )
+            if (invoice.id != invoiceId) invoice else {
+                val issuing = invoice.issuedAt.isBlank() && newStatus != InvoiceStatus.DRAFT
+                if (issuing) validateSeller(data.company)
+                invoice.copy(
+                    status = newStatus,
+                    issuedAt = if (issuing) InvoiceDates.utcNow() else invoice.issuedAt,
+                    seller = if (issuing) data.company else invoice.seller,
+                    bankName = if (issuing) data.company.bankName else invoice.bankName,
+                    iban = if (issuing) data.company.iban else invoice.iban
+                )
+            }
         }) }
     }
 
@@ -129,7 +174,7 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) {
         return addInvoice(source.copy(
             id = UUID.randomUUID().toString(), invoiceNumber = generateNextInvoiceNumber(),
             issueDate = InvoiceDates.today(), dueDate = InvoiceDates.plusDays(InvoiceDates.today(), 14),
-            status = InvoiceStatus.DRAFT, issuedAt = "", seller = companyProfile.value,
+            status = InvoiceStatus.DRAFT, issuedAt = "", seller = null,
             bankName = companyProfile.value.bankName, iban = companyProfile.value.iban
         ))
     }
@@ -148,7 +193,7 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) {
     }
 
     fun updateCompanyProfile(profile: CompanyProfile) {
-        require(profile.companyName.isNotBlank()) { "اسم المنشأة مطلوب" }
+        require(profile.companyName.isNotBlank() && profile.companyName.toByteArray(Charsets.UTF_8).size <= 255) { "اسم المنشأة مطلوب ويجب ألا يتجاوز 255 بايت" }
         require(profile.vatNumber.isBlank() || Regex("3[0-9]{13}3").matches(profile.vatNumber)) { "راجع الرقم الضريبي للمنشأة" }
         require(profile.defaultTaxRate.isFinite() && profile.defaultTaxRate in 0.0..1.0)
         update { it.copy(company = profile) }
@@ -157,6 +202,15 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) {
     fun updateReminderOptions(options: ReminderOptions) { update { it.copy(reminderOptions = options) } }
 
     companion object { private val storageLock = Any() }
+}
+
+private class InvoiceDatabase(context: Context) : android.database.sqlite.SQLiteOpenHelper(context, "fawraty_records.db", null, 1) {
+    override fun onCreate(db: android.database.sqlite.SQLiteDatabase) {
+        db.execSQL("CREATE TABLE invoice_store (id INTEGER PRIMARY KEY CHECK(id = 1), payload TEXT NOT NULL)")
+    }
+    override fun onUpgrade(db: android.database.sqlite.SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        error("يلزم ترحيل صريح للبيانات؛ لم يتم حذف البيانات الحالية")
+    }
 }
 
 private fun defaultCatalog(): List<CatalogProduct> {

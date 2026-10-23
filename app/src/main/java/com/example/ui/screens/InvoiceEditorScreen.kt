@@ -178,7 +178,7 @@ fun InvoiceEditorScreen(
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                     Text(
-                        text = "إصدار فاتورة إلكترونية معتمدة لشركة زجاج الرياض",
+                        text = "إنشاء فاتورة وحفظها على الجهاز",
                         color = RoyalGold,
                         style = MaterialTheme.typography.labelSmall
                     )
@@ -464,6 +464,7 @@ fun InvoiceEditorScreen(
                 }
                 try {
                     val updated = item.copy(description = desc, quantity = quantity, unitPrice = price, unit = unitStr, discount = discount)
+                    calculateInvoiceTotals(items.toMutableList().apply { set(index, updated) }, company.defaultTaxRate)
                     items[index] = updated
                     if (desc.isBlank()) formErrors[item.id] = "وصف البند مطلوب" else formErrors.remove(item.id)
                 } catch (error: IllegalArgumentException) {
@@ -595,7 +596,7 @@ fun InvoiceEditorScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "المخلص المالي للفاتورة (معتمد ZATCA)",
+                        text = "الملخص المالي للفاتورة",
                         color = RoyalGold,
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                     )
@@ -612,7 +613,7 @@ fun InvoiceEditorScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(text = "ضريبة القيمة المضافة 15%", color = GlassBlue)
+                        Text(text = "ضريبة القيمة المضافة (${company.defaultTaxRate * 100}%)", color = GlassBlue)
                         Text(text = "${numberFormat.format(vatAmount)} ${company.currencyAr}", color = GlassBlue, fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -663,6 +664,10 @@ fun InvoiceEditorScreen(
         item {
             Button(
                 onClick = {
+                    if (items.any { it.description.isBlank() }) {
+                        Toast.makeText(context, "أكمل وصف كل بند", Toast.LENGTH_LONG).show()
+                        return@Button
+                    }
                     if (clientName.isBlank()) {
                         Toast.makeText(context, "يرجى إدخال اسم العميل", Toast.LENGTH_SHORT).show()
                         return@Button

@@ -452,7 +452,7 @@ fun DashboardScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "${stats.totalCount} فواتير معتمدة",
+                                text = "${stats.totalCount} سجلات فواتير",
                                 color = RoyalGold,
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -552,7 +552,7 @@ fun DashboardScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "ضريبة القيمة 15%",
+                                    text = "إجمالي الضريبة المسجلة",
                                     color = TextSecondary,
                                     style = MaterialTheme.typography.labelMedium
                                 )

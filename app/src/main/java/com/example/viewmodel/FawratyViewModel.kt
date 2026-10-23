@@ -81,6 +81,7 @@ class FawratyViewModel(
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError = _lastError.asStateFlow()
     fun clearError() { _lastError.value = null }
+    override fun onCleared() { repository.close(); super.onCleared() }
     private fun change(action: () -> Unit): Boolean = try {
         action()
         true
@@ -171,7 +172,7 @@ class FawratyViewModel(
         status: InvoiceStatus = InvoiceStatus.PENDING,
         clientId: String? = null
     ): Invoice {
-        require(Regex("3[0-9]{13}3").matches(companyProfile.value.vatNumber)) { "أكمل الرقم الضريبي الصحيح للمنشأة من الإعدادات قبل إصدار فاتورة ضريبية" }
+        require(status == InvoiceStatus.DRAFT || Regex("3[0-9]{13}3").matches(companyProfile.value.vatNumber)) { "أكمل الرقم الضريبي الصحيح للمنشأة من الإعدادات قبل إصدار فاتورة ضريبية" }
         val nextNumber = repository.generateNextInvoiceNumber()
         val invoice = Invoice(
             id = UUID.randomUUID().toString(),
@@ -192,8 +193,8 @@ class FawratyViewModel(
             paymentTerms = paymentTerms,
             bankName = companyProfile.value.bankName,
             iban = companyProfile.value.iban,
-            issuedAt = InvoiceDates.utcNow(),
-            seller = companyProfile.value,
+            issuedAt = if (status == InvoiceStatus.DRAFT) "" else InvoiceDates.utcNow(),
+            seller = if (status == InvoiceStatus.DRAFT) null else companyProfile.value,
             clientId = clientId
         )
         val saved = repository.addInvoice(invoice)

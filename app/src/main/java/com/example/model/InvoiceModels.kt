@@ -24,7 +24,9 @@ data class InvoiceItem(
         require(quantity.isFinite() && quantity > 0) { "الكمية يجب أن تكون رقمًا موجبًا" }
         require(unitPrice.isFinite() && unitPrice >= 0) { "السعر يجب أن يكون رقمًا غير سالب" }
         require(discount.isFinite() && discount >= 0) { "الخصم يجب أن يكون رقمًا غير سالب" }
-        require(BigDecimal.valueOf(discount) <= BigDecimal.valueOf(quantity).multiply(BigDecimal.valueOf(unitPrice))) {
+        val gross = BigDecimal.valueOf(quantity).multiply(BigDecimal.valueOf(unitPrice))
+        require(gross <= MAX_INVOICE_AMOUNT) { "قيمة البند تتجاوز الحد المالي المدعوم" }
+        require(BigDecimal.valueOf(discount) <= gross) {
             "الخصم أكبر من قيمة البند"
         }
     }
@@ -57,6 +59,7 @@ data class Invoice(
     val clientId: String? = null
 ) {
     init {
+        require(calculateInvoiceTotals(items, taxRate).grandTotal.isFinite())
         require(clientName.isNotBlank()) { "يرجى إدخال اسم العميل" }
         require(items.isNotEmpty() && items.all { it.description.isNotBlank() }) { "يرجى إدخال وصف لكل بند" }
         require(taxRate.isFinite() && taxRate in 0.0..1.0) { "نسبة الضريبة غير صالحة" }

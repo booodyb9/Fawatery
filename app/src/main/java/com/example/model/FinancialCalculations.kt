@@ -3,6 +3,8 @@ package com.example.model
 import java.math.BigDecimal
 import java.math.RoundingMode
 
+val MAX_INVOICE_AMOUNT: BigDecimal = BigDecimal("999999999999.99")
+
 fun moneySum(values: List<Double>): Double = values.fold(BigDecimal.ZERO) { total, value ->
     total.add(BigDecimal.valueOf(value))
 }.setScale(2, RoundingMode.HALF_UP).toDouble()
@@ -16,7 +18,10 @@ data class InvoiceTotals(val subtotal: Double, val vat: Double, val grandTotal: 
 fun calculateInvoiceTotals(items: List<InvoiceItem>, taxRate: Double): InvoiceTotals {
     require(taxRate.isFinite() && taxRate in 0.0..1.0)
     val subtotal = moneySum(items.map { it.totalWithoutVat })
+    require(BigDecimal.valueOf(subtotal) <= MAX_INVOICE_AMOUNT) { "مجموع الفاتورة يتجاوز الحد المالي المدعوم" }
     val vat = BigDecimal.valueOf(subtotal).multiply(BigDecimal.valueOf(taxRate))
         .setScale(2, RoundingMode.HALF_UP).toDouble()
-    return InvoiceTotals(subtotal, vat, moneySum(listOf(subtotal, vat)))
+    val grand = moneySum(listOf(subtotal, vat))
+    require(BigDecimal.valueOf(grand) <= MAX_INVOICE_AMOUNT) { "إجمالي الفاتورة يتجاوز الحد المالي المدعوم" }
+    return InvoiceTotals(subtotal, vat, grand)
 }

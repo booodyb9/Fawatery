@@ -18,6 +18,7 @@ import org.robolectric.annotation.Config
 class InvoiceStorageTest {
     private val context get() = ApplicationProvider.getApplicationContext<Context>()
     @Before fun resetFixtureStorage() {
+        context.deleteDatabase("fawraty_records.db")
         context.getSharedPreferences("fawraty_records", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
@@ -69,5 +70,45 @@ class InvoiceStorageTest {
         assertEquals(0.0, stats.totalVat, 0.0)
         assertEquals(1, stats.draftCount)
         assertEquals(0.0, repository.clients.value.single().totalBilled, 0.0)
+    }
+
+    @Test fun failedTransactionCannotAppearAfterRefreshOrRecreation() {
+        val repository = FawratyRepository(context)
+        repository.updateCompanyProfile(CompanyProfile(companyName = "منشأة اختبار", vatNumber = "300000000000003"))
+        val before = repository.addInvoice(sampleInvoice("SAVED"))
+        context.openOrCreateDatabase("fawraty_records.db", Context.MODE_PRIVATE, null).use { database ->
+            database.execSQL("CREATE TRIGGER fail_write BEFORE INSERT ON invoice_store BEGIN SELECT RAISE(ABORT, 'forced test failure'); END")
+        }
+        try { repository.addInvoice(sampleInvoice("FAILED")); fail("The transaction must fail") }
+        catch (_: android.database.sqlite.SQLiteException) {}
+        catch (_: IllegalStateException) {}
+        assertEquals(listOf(before), repository.invoices.value)
+        repository.refreshDates()
+        assertEquals(listOf(before), repository.invoices.value)
+        assertEquals(listOf(before), FawratyRepository(context).invoices.value)
+    }
+
+    @Test fun draftsCaptureValidatedSellerOnlyAtFirstIssuance() {
+        val repository = FawratyRepository(context)
+        val draft = repository.addInvoice(sampleInvoice("DRAFT", InvoiceStatus.DRAFT))
+        assertNull(draft.seller)
+        assertEquals("", draft.issuedAt)
+        try { repository.updateInvoiceStatus(draft.id, InvoiceStatus.PENDING); fail("Missing seller VAT must block issuance") }
+        catch (_: IllegalArgumentException) {}
+        assertEquals(InvoiceStatus.DRAFT, repository.invoices.value.single().status)
+        val seller = CompanyProfile(companyName = "منشأة مكتملة", vatNumber = "300000000000003", iban = "TEST ONLY")
+        repository.updateCompanyProfile(seller)
+        repository.updateInvoiceStatus(draft.id, InvoiceStatus.PENDING)
+        val issued = repository.invoices.value.single()
+        assertEquals(seller, issued.seller)
+        assertTrue(issued.issuedAt.isNotBlank())
+        repository.updateCompanyProfile(seller.copy(companyName = "اسم أحدث"))
+        repository.updateInvoiceStatus(draft.id, InvoiceStatus.PAID)
+        assertEquals(seller, repository.invoices.value.single().seller)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsFiniteOperandsWhoseProductExceedsTheFinancialRange() {
+        InvoiceItem("x", "test", 1e200, 1e200)
     }
 }
