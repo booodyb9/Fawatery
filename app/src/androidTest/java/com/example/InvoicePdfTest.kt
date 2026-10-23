@@ -17,6 +17,51 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class InvoicePdfTest {
+    @Test fun invoiceWithoutTaxNumberStillExports() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val seller = CompanyProfile(companyName = "منشأة اختبار", vatNumber = "")
+        val invoice = pdfSampleInvoice().copy(seller = seller, issuedAt = "2026-10-23T08:30:00Z")
+        val file = InvoiceExporter.generatePdf(context, invoice, seller)
+        assertTrue(file.length() > 1000)
+        PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)).use {
+            assertTrue(it.pageCount > 0)
+        }
+    }
+
+    @Test fun pdfUsesTheSelectedCompanyLogo() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val image = Bitmap.createBitmap(100, 200, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.RED)
+        }
+        val bytes = java.io.ByteArrayOutputStream().use { out ->
+            image.compress(Bitmap.CompressFormat.PNG, 100, out); out.toByteArray()
+        }
+        image.recycle()
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it.toInt() and 255) }
+        val name = "logo_${hash}.png"
+        File(context.filesDir, "company_logos").apply { mkdirs() }.resolve(name).writeBytes(bytes)
+        // JSON also exercises backward-compatible profile loading, before and after this feature.
+        val seller = com.squareup.moshi.Moshi.Builder()
+            .add(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
+            .adapter(CompanyProfile::class.java).fromJson(
+                """{"companyName":"منشأة اختبار","vatNumber":"300000000000003","logoFileName":"$name"}"""
+            )!!
+        val invoice = pdfSampleInvoice().copy(seller = seller, issuedAt = "2026-10-23T08:30:00Z")
+        val file = InvoiceExporter.generatePdf(context, invoice, seller)
+        PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)).use { renderer ->
+            renderer.openPage(0).use { page ->
+                val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                val pixel = bitmap.getPixel(510 * 2, 45 * 2)
+                assertTrue("Selected logo must be printed", android.graphics.Color.red(pixel) > 200 &&
+                    android.graphics.Color.green(pixel) < 50 && android.graphics.Color.blue(pixel) < 50)
+                bitmap.recycle()
+            }
+        }
+    }
+
     @Test fun longArabicInvoicePaginatesAndItsPrintedQrDecodes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val company = CompanyProfile(companyName = "منشأة تجريبية للفحص — TEST ONLY", vatNumber = "300000000000003",
