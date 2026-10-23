@@ -172,7 +172,6 @@ class FawratyViewModel(
         status: InvoiceStatus = InvoiceStatus.PENDING,
         clientId: String? = null
     ): Invoice {
-        require(status == InvoiceStatus.DRAFT || Regex("3[0-9]{13}3").matches(companyProfile.value.vatNumber)) { "أكمل الرقم الضريبي الصحيح للمنشأة من الإعدادات قبل إصدار فاتورة ضريبية" }
         val nextNumber = repository.generateNextInvoiceNumber()
         val invoice = Invoice(
             id = UUID.randomUUID().toString(),

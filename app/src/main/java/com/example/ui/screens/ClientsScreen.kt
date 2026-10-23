@@ -363,7 +363,7 @@ fun ClientsScreen(
                     OutlinedTextField(
                         value = vatNumber,
                         onValueChange = { vatNumber = it },
-                        label = { Text("الرقم الضريبي (15 رقم)") },
+                        label = { Text("الرقم الضريبي (اختياري، 15 رقم)") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp)
                     )

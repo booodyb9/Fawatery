@@ -105,9 +105,6 @@ class InvoiceStorageTest {
         val draft = repository.addInvoice(sampleInvoice("DRAFT", InvoiceStatus.DRAFT))
         assertNull(draft.seller)
         assertEquals("", draft.issuedAt)
-        try { repository.updateInvoiceStatus(draft.id, InvoiceStatus.PENDING); fail("Missing seller VAT must block issuance") }
-        catch (_: IllegalArgumentException) {}
-        assertEquals(InvoiceStatus.DRAFT, repository.invoices.value.single().status)
         val seller = CompanyProfile(companyName = "منشأة مكتملة", vatNumber = "300000000000003", iban = "TEST ONLY")
         repository.updateCompanyProfile(seller)
         repository.updateInvoiceStatus(draft.id, InvoiceStatus.PENDING)
@@ -117,6 +114,49 @@ class InvoiceStorageTest {
         repository.updateCompanyProfile(seller.copy(companyName = "اسم أحدث"))
         repository.updateInvoiceStatus(draft.id, InvoiceStatus.PAID)
         assertEquals(seller, repository.invoices.value.single().seller)
+    }
+
+    @Test fun invoiceCanBeIssuedWithAnOptionalEmptySellerTaxNumber() {
+        val repository = FawratyRepository(context)
+        repository.updateCompanyProfile(CompanyProfile(companyName = "منشأة بلا رقم ضريبي", vatNumber = ""))
+        val saved = repository.addInvoice(sampleInvoice("NO-TAX-NUMBER"))
+        assertEquals("", saved.seller!!.vatNumber)
+        assertTrue(saved.issuedAt.isNotBlank())
+        assertEquals(saved, FawratyRepository(context).invoices.value.single())
+        val draft = repository.addInvoice(sampleInvoice("DRAFT-NO-TAX", InvoiceStatus.DRAFT))
+        repository.updateInvoiceStatus(draft.id, InvoiceStatus.PENDING)
+        assertEquals("", repository.invoices.value.first { it.id == draft.id }.seller!!.vatNumber)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun anEnteredSellerTaxNumberStillNeedsToBeValid() {
+        FawratyRepository(context).updateCompanyProfile(CompanyProfile(vatNumber = "123"))
+    }
+
+    @Test fun companyLogoPersistsAndIssuedInvoiceKeepsItsOriginalLogo() {
+        val repository = FawratyRepository(context)
+        val firstLogo = "logo_" + "a".repeat(64) + ".png"
+        val nextLogo = "logo_" + "b".repeat(64) + ".png"
+        val original = CompanyProfile(companyName = "منشأة اختبار", logoFileName = firstLogo)
+        repository.updateCompanyProfile(original)
+        val saved = repository.addInvoice(sampleInvoice("LOGO"))
+        repository.updateCompanyProfile(original.copy(logoFileName = nextLogo))
+        val recreated = FawratyRepository(context)
+        assertEquals(nextLogo, recreated.companyProfile.value.logoFileName)
+        assertEquals(firstLogo, recreated.invoices.value.single().seller!!.logoFileName)
+        assertEquals(saved.seller, recreated.invoices.value.single().seller)
+    }
+
+    @Test fun viewModelCreatesAnInvoiceWithoutTaxNumbers() {
+        val repository = FawratyRepository(context)
+        val model = com.example.viewmodel.FawratyViewModel(repository)
+        val fixture = sampleInvoice()
+        val saved = model.createInvoice(
+            fixture.clientName, fixture.clientCompany, "", "", "", fixture.clientAddress,
+            fixture.issueDate, fixture.dueDate, fixture.projectCategory, fixture.items, "", ""
+        )
+        assertEquals("", saved.seller!!.vatNumber)
+        assertEquals("", saved.clientVatNumber)
     }
 
     @Test(expected = IllegalArgumentException::class)

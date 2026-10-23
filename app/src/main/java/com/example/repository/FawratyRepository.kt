@@ -104,8 +104,8 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) : java
     private fun validateSeller(company: CompanyProfile) {
         require(company.companyName.isNotBlank() &&
             company.companyName.toByteArray(Charsets.UTF_8).size <= 255 &&
-            Regex("3[0-9]{13}3").matches(company.vatNumber)) {
-            "أكمل اسم المنشأة ورقمها الضريبي الصحيح من الإعدادات قبل إصدار الفاتورة"
+            (company.vatNumber.isBlank() || Regex("3[0-9]{13}3").matches(company.vatNumber))) {
+            "راجع اسم المنشأة والرقم الضريبي إن أدخلته"
         }
     }
 
@@ -195,6 +195,7 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) : java
     fun updateCompanyProfile(profile: CompanyProfile) {
         require(profile.companyName.isNotBlank() && profile.companyName.toByteArray(Charsets.UTF_8).size <= 255) { "اسم المنشأة مطلوب ويجب ألا يتجاوز 255 بايت" }
         require(profile.vatNumber.isBlank() || Regex("3[0-9]{13}3").matches(profile.vatNumber)) { "راجع الرقم الضريبي للمنشأة" }
+        require(profile.logoFileName == null || com.example.branding.CompanyLogoStore.isValidFileName(profile.logoFileName)) { "ملف الشعار غير صالح" }
         require(profile.defaultTaxRate.isFinite() && profile.defaultTaxRate in 0.0..1.0)
         update { it.copy(company = profile) }
     }

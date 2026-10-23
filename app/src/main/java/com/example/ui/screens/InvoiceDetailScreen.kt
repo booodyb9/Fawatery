@@ -2,7 +2,7 @@ package com.example.ui.screens
 
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.foundation.Image
+import com.example.ui.components.CompanyLogo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,12 +54,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
 import com.example.export.InvoiceExporter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -221,7 +219,7 @@ fun InvoiceDetailScreen(
                                         context,
                                         pdfFile,
                                         "application/pdf",
-                                        "فاتورة ضريبية ${invoice.invoiceNumber}"
+                                        "فاتورة ${invoice.invoiceNumber}"
                                     )
                                     Toast.makeText(context, "تم تجهيز ملف PDF بنجاح", Toast.LENGTH_SHORT).show()
                                 } catch (e: Exception) {
@@ -339,9 +337,8 @@ fun InvoiceDetailScreen(
                         verticalAlignment = Alignment.Top
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Image(
-                                painter = painterResource(id = R.drawable.fawraty_logo),
-                                contentDescription = "Company Logo",
+                            CompanyLogo(
+                                fileName = company.logoFileName,
                                 modifier = Modifier
                                     .size(54.dp)
                                     .clip(RoundedCornerShape(12.dp))
@@ -364,11 +361,13 @@ fun InvoiceDetailScreen(
                                     color = RoyalGold,
                                     style = MaterialTheme.typography.labelSmall
                                 )
-                                Text(
+                                if (company.vatNumber.isNotBlank()) {
+                                    Text(
                                     text = "الرقم الضريبي: ${company.vatNumber}",
                                     color = GlassBlue,
                                     style = MaterialTheme.typography.labelSmall
                                 )
+                                }
                             }
                         }
                     }
@@ -608,7 +607,12 @@ fun InvoiceDetailScreen(
                             if (zatcaTlvString != null) {
                                 ZatcaQrCodeView(dataString = zatcaTlvString, sizeDp = 130.dp)
                             } else {
-                                Text("QR غير متاح: أكمل بيانات المنشأة وأصدر الفاتورة", color = TextSecondary)
+                                Text(
+                                    if (company.vatNumber.isBlank()) "الرقم الضريبي اختياري؛ QR متاح للفواتير التي تتضمنه"
+                                    else if (invoice.status == InvoiceStatus.DRAFT) "يظهر QR بعد إصدار الفاتورة"
+                                    else "QR غير متاح لهذه الفاتورة",
+                                    color = TextSecondary
+                                )
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(

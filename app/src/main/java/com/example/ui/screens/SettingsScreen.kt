@@ -1,7 +1,14 @@
 package com.example.ui.screens
 
 import android.widget.Toast
-import androidx.compose.foundation.Image
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.branding.CompanyLogoStore
+import com.example.ui.components.CompanyLogo
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -41,11 +48,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
 import com.example.ui.components.GlassCard
 import com.example.ui.components.ZatcaVerificationTag
 import com.example.ui.theme.CardBackgroundGlass
@@ -78,6 +83,22 @@ fun SettingsScreen(
     var email by remember { mutableStateOf(company.email) }
     var bankName by remember { mutableStateOf(company.bankName) }
     var iban by remember { mutableStateOf(company.iban) }
+    var logoFileName by remember { mutableStateOf(company.logoFileName) }
+    var importingLogo by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch {
+            importingLogo = true
+            try {
+                logoFileName = withContext(Dispatchers.IO) { CompanyLogoStore.importFromUri(context, uri) }
+                Toast.makeText(context, "تم اختيار الشعار؛ اضغط حفظ التعديلات لتطبيقه", Toast.LENGTH_LONG).show()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Toast.makeText(context, error.message ?: "تعذر قراءة صورة الشعار", Toast.LENGTH_LONG).show()
+            } finally { importingLogo = false }
+        }
+    }
 
     val reminderOptions by viewModel.reminderOptions.collectAsState()
     val autoRemind3Days = reminderOptions.threeDaysBefore
@@ -127,16 +148,15 @@ fun SettingsScreen(
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.fawraty_logo),
-                        contentDescription = "Company Logo",
+                    CompanyLogo(
+                        fileName = logoFileName,
                         modifier = Modifier
                             .size(68.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .border(1.5.dp, GlassGoldBorder, RoundedCornerShape(12.dp))
                     )
                     Spacer(modifier = Modifier.width(14.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Outlined.Palette,
@@ -153,10 +173,24 @@ fun SettingsScreen(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "شعار زجاج الرياض المعماري معتمد في جميع ترويسات الفواتير وملفات الـ PDF المصدرة.",
+                            text = "اختر صورة للشعار ثم احفظ التعديلات. يظهر في الفواتير الجديدة وPDF، وتحتفظ الفواتير الصادرة بشعارها.",
                             color = TextSecondary,
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 16.sp)
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            enabled = !importingLogo,
+                            onClick = { logoPicker.launch("image/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = GlassBlue)
+                        ) {
+                            Text(if (importingLogo) "جارٍ تجهيز الشعار…" else "اختيار شعار من الصور")
+                        }
+                        if (logoFileName != null) {
+                            androidx.compose.material3.TextButton(
+                                enabled = !importingLogo,
+                                onClick = { logoFileName = null }
+                            ) { Text("استعادة الشعار الافتراضي") }
+                        }
                     }
                 }
             }
@@ -317,7 +351,7 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = vatNumber,
                             onValueChange = { vatNumber = it },
-                            label = { Text("الرقم الضريبي ZATCA") },
+                            label = { Text("الرقم الضريبي (اختياري)") },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(8.dp),
                             colors = getSettingsFieldColors()
@@ -379,17 +413,19 @@ fun SettingsScreen(
         // Save Button
         item {
             Button(
+                enabled = !importingLogo,
                 onClick = {
                     val updated = company.copy(
                         companyName = companyName,
                         companyNameEn = companyNameEn,
                         commercialRegistration = crNumber,
-                        vatNumber = vatNumber,
+                        vatNumber = vatNumber.trim(),
                         address = address,
                         phone = phone,
                         email = email,
                         bankName = bankName,
-                        iban = iban
+                        iban = iban,
+                        logoFileName = logoFileName
                     )
                     if (viewModel.updateCompanyProfile(updated)) {
                         Toast.makeText(context, "تم حفظ بيانات المنشأة محليًا", Toast.LENGTH_SHORT).show()

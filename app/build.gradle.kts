@@ -84,6 +84,7 @@ googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.W
 // This makes it easy to add them back in the future if needed.
 dependencies {
   implementation("com.google.zxing:core:3.5.3")
+  implementation("androidx.exifinterface:exifinterface:1.3.7")
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
   // implementation(libs.accompanist.permissions)

@@ -138,5 +138,6 @@ data class CompanyProfile(
     val iban: String = "",
     val defaultTaxRate: Double = 0.15,
     val currencyAr: String = "ر.س",
-    val currencyEn: String = "SAR"
+    val currencyEn: String = "SAR",
+    val logoFileName: String? = null
 )

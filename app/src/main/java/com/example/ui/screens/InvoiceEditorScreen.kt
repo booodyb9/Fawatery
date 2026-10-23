@@ -171,7 +171,7 @@ fun InvoiceEditorScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = "إنشاء فاتورة ضريبية جديدة",
+                        text = "إنشاء فاتورة جديدة",
                         color = TextPrimary,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
@@ -288,7 +288,7 @@ fun InvoiceEditorScreen(
                         OutlinedTextField(
                             value = clientVatNumber,
                             onValueChange = { clientVatNumber = it },
-                            label = { Text("الرقم الضريبي (15 رقم)") },
+                            label = { Text("الرقم الضريبي (اختياري، 15 رقم)") },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -709,7 +709,7 @@ fun InvoiceEditorScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = GlassBlue)
             ) {
                 Text(
-                    text = "إصدار وحفظ الفاتورة الضريبية",
+                    text = "إصدار وحفظ الفاتورة",
                     color = Color.White,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                 )

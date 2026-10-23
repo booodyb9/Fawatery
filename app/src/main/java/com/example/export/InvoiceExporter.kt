@@ -26,7 +26,7 @@ object InvoiceExporter {
     fun generatePdf(context: Context, invoice: Invoice, company: CompanyProfile,
         accentColorHex: Int = Color.rgb(160, 124, 35)): File {
         val seller = invoice.seller ?: company
-        val qr = if (invoice.status == InvoiceStatus.DRAFT) null
+        val qr = if (invoice.status == InvoiceStatus.DRAFT || seller.vatNumber.isBlank()) null
             else InvoiceQr.bitmap(invoice.generateZatcaTlvBase64(seller.companyName, seller.vatNumber))
         val document = PdfDocument()
         val output = File(context.cacheDir, "Invoice_${invoice.id.replace(Regex("[^A-Za-z0-9_-]"), "_")}.pdf")
@@ -129,23 +129,8 @@ private class PdfInvoiceLayout(
     private val context: Context
 ) : java.io.Closeable {
     // At 60 PDF points, 256 pixels gives about 300 dpi without embedding the source photograph.
-    private val logo: Bitmap? = loadLogo(context)
-    override fun close() { logo?.recycle() }
-
-    private fun loadLogo(context: Context): Bitmap? {
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true; inScaled = false }
-        BitmapFactory.decodeResource(context.resources, R.drawable.fawraty_logo, options)
-        options.inSampleSize = 1
-        while (maxOf(options.outWidth, options.outHeight) / options.inSampleSize > 512) options.inSampleSize *= 2
-        options.inJustDecodeBounds = false
-        val source = BitmapFactory.decodeResource(context.resources, R.drawable.fawraty_logo, options) ?: return null
-        val ratio = minOf(1f, 256f / maxOf(source.width, source.height))
-        if (ratio == 1f) return source
-        val scaled = Bitmap.createScaledBitmap(source, maxOf(1, (source.width * ratio).toInt()),
-            maxOf(1, (source.height * ratio).toInt()), true)
-        if (scaled !== source) source.recycle()
-        return scaled
-    }
+    private val logo = com.example.branding.CompanyLogoStore.load(context, company.logoFileName)
+    override fun close() { logo.recycle() }
 
     private var page: PdfDocument.Page? = null
     private lateinit var canvas: Canvas
@@ -194,7 +179,7 @@ private class PdfInvoiceLayout(
         drawLayout(heading, margin, 24f)
         val title = layout(if (invoice.status == InvoiceStatus.DRAFT) "مسودة — ${invoice.invoiceNumber}" else "فاتورة — ${invoice.invoiceNumber}", bodyWidth - 75f, 10f)
         drawLayout(title, margin, 30f + heading.height)
-        if (logo != null) {
+        run {
             val scale = minOf(60f / logo.width, 60f / logo.height)
             canvas.drawBitmap(logo, null, RectF(499f, 22f, 499f + logo.width * scale, 22f + logo.height * scale), paint)
         }
@@ -233,7 +218,8 @@ private class PdfInvoiceLayout(
     fun draw(qr: Bitmap?) {
         newPage()
         block("بيانات المنشأة", bold = true)
-        block("الرقم الضريبي: ${company.vatNumber} | السجل التجاري: ${company.commercialRegistration}")
+        if (company.vatNumber.isNotBlank()) block("الرقم الضريبي: ${company.vatNumber}")
+        if (company.commercialRegistration.isNotBlank()) block("السجل التجاري: ${company.commercialRegistration}")
         block("العنوان: ${company.address} | الهاتف: ${company.phone}")
         block("العميل: ${invoice.clientName} | ${invoice.clientCompany}", bold = true)
         block("رقم العميل الضريبي: ${invoice.clientVatNumber.ifBlank { "غير محدد" }}")

@@ -62,6 +62,58 @@ class InvoicePdfTest {
         }
     }
 
+    @Test fun importedLogoSurvivesSourceRemovalAndKeepsAspectRatio() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = File.createTempFile("logo-source-", ".png", context.cacheDir)
+        val bitmap = Bitmap.createBitmap(800, 400, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.BLUE)
+        }
+        source.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", source)
+        val name = com.example.branding.CompanyLogoStore.importFromUri(context, uri)
+        source.delete()
+        val loaded = com.example.branding.CompanyLogoStore.load(context, name)
+        assertEquals(256, loaded.width)
+        assertEquals(128, loaded.height)
+        assertEquals(android.graphics.Color.BLUE, loaded.getPixel(100, 50))
+        loaded.recycle()
+    }
+
+    @Test fun logoImportRejectsNonImageFiles() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = File.createTempFile("invalid-logo-", ".txt", context.cacheDir)
+        source.writeText("synthetic invalid image")
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", source)
+        try {
+            com.example.branding.CompanyLogoStore.importFromUri(context, uri)
+            fail("Invalid input must leave the selected logo unchanged")
+        } catch (_: IllegalArgumentException) {
+        } finally { source.delete() }
+    }
+
+    @Test fun logoImportAppliesPhotoOrientation() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = File.createTempFile("rotated-logo-", ".jpg", context.cacheDir)
+        val bitmap = Bitmap.createBitmap(80, 40, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.GREEN)
+        }
+        source.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+        bitmap.recycle()
+        androidx.exifinterface.media.ExifInterface(source.path).apply {
+            setAttribute(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90.toString())
+            saveAttributes()
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", source)
+        val name = com.example.branding.CompanyLogoStore.importFromUri(context, uri)
+        source.delete()
+        val loaded = com.example.branding.CompanyLogoStore.load(context, name)
+        assertEquals(40, loaded.width)
+        assertEquals(80, loaded.height)
+        loaded.recycle()
+    }
+
     @Test fun longArabicInvoicePaginatesAndItsPrintedQrDecodes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val company = CompanyProfile(companyName = "منشأة تجريبية للفحص — TEST ONLY", vatNumber = "300000000000003",
