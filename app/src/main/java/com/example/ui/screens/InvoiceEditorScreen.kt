@@ -137,6 +137,14 @@ fun InvoiceEditorScreen(
         }
     }
 
+    fun addItemSafely(newItem: InvoiceItem) {
+        try {
+            calculateInvoiceTotals(items.toList() + newItem, company.defaultTaxRate)
+            items.add(newItem)
+        } catch (error: IllegalArgumentException) {
+            Toast.makeText(context, error.message ?: "قيمة البند غير صالحة", Toast.LENGTH_LONG).show()
+        }
+    }
     val totals = calculateInvoiceTotals(items, company.defaultTaxRate)
     val subtotal = totals.subtotal
     val vatAmount = totals.vat
@@ -400,7 +408,7 @@ fun InvoiceEditorScreen(
                                         }
                                     },
                                     onClick = {
-                                        items.add(
+                                        addItemSafely(
                                             InvoiceItem(
                                                 id = UUID.randomUUID().toString(),
                                                 description = prod.name,
@@ -420,7 +428,7 @@ fun InvoiceEditorScreen(
                     // Add Custom Item
                     Button(
                         onClick = {
-                            items.add(
+                            addItemSafely(
                                 InvoiceItem(
                                     id = UUID.randomUUID().toString(),
                                     description = "بند زجاجي جديد",
@@ -564,7 +572,7 @@ fun InvoiceEditorScreen(
                                 discountStr = it
                                 updateItem()
                             },
-                            label = { Text("الخصم") },
+                            label = { Text("الخصم (ر.س)") },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(8.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),

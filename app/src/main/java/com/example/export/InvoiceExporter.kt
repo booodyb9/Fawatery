@@ -217,7 +217,7 @@ private class PdfInvoiceLayout(
         block("الرقم الضريبي: ${company.vatNumber} | السجل التجاري: ${company.commercialRegistration}")
         block("العنوان: ${company.address} | الهاتف: ${company.phone}")
         block("العميل: ${invoice.clientName} | ${invoice.clientCompany}", bold = true)
-        block("رقم العميل الضريبي: ${invoice.clientVatNumber.ifBlank { "غير مسجل" }}")
+        block("رقم العميل الضريبي: ${invoice.clientVatNumber.ifBlank { "غير محدد" }}")
         block("العنوان: ${invoice.clientAddress} | الهاتف: ${invoice.clientPhone}")
         block("تاريخ الفاتورة: ${invoice.issueDate} | الاستحقاق: ${invoice.dueDate}")
         if (invoice.issuedAt.isNotBlank()) block("وقت الإصدار الفعلي (UTC): ${invoice.issuedAt}")

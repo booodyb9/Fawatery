@@ -188,7 +188,7 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) : java
     }
 
     fun addCatalogProduct(product: CatalogProduct) {
-        require(product.defaultPrice.isFinite() && product.defaultPrice >= 0)
+        require(product.defaultPrice.isFinite() && product.defaultPrice >= 0 && java.math.BigDecimal.valueOf(product.defaultPrice) <= MAX_INVOICE_AMOUNT)
         update { it.copy(catalog = listOf(product) + it.catalog) }
     }
 

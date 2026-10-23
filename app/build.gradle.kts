@@ -143,3 +143,8 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+// Include the root exception when a synthetic regression fixture fails in CI.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+  testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+}
