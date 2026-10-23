@@ -28,6 +28,7 @@ class InvoicePdfTest {
         )
         val file = InvoiceExporter.generatePdf(context, invoice, company)
         assertTrue(file.length() > 0)
+        assertTrue("The 35-line fixture should remain practical to share", file.length() < 5_000_000)
         val artifacts = File(context.filesDir, "validation-artifacts").apply { mkdirs() }
         file.copyTo(File(artifacts, "sample-arabic-invoice.pdf"), overwrite = true)
         val renderer = PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY))
