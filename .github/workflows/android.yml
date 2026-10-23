@@ -61,6 +61,8 @@ jobs:
             adb shell run-as com.aistudio.fawraty.invdx ls files/validation-artifacts
             mkdir -p app/build/validation-artifacts
             adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/sample-arabic-invoice.pdf > app/build/validation-artifacts/sample-arabic-invoice.pdf
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/invoice-without-tax-number.pdf > app/build/validation-artifacts/invoice-without-tax-number.pdf
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/custom-logo-invoice.pdf > app/build/validation-artifacts/custom-logo-invoice.pdf
             adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/first-page.png > app/build/validation-artifacts/first-page.png
             adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/last-page.png > app/build/validation-artifacts/last-page.png
 
@@ -69,7 +71,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           root = Path("app/build/validation-artifacts")
-          for name, signature in [("sample-arabic-invoice.pdf", b"%PDF-"), ("first-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10])), ("last-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10]))]:
+          for name, signature in [("sample-arabic-invoice.pdf", b"%PDF-"), ("invoice-without-tax-number.pdf", b"%PDF-"), ("custom-logo-invoice.pdf", b"%PDF-"), ("first-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10])), ("last-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10]))]:
               data = (root / name).read_bytes()
               assert data.startswith(signature) and len(data) > 1000, f"Invalid exported fixture: {name}, {len(data)} bytes"
               print(f"Validated {name}: {len(data)} bytes")

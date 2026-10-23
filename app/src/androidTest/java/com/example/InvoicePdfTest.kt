@@ -23,6 +23,8 @@ class InvoicePdfTest {
         val invoice = pdfSampleInvoice().copy(seller = seller, issuedAt = "2026-10-23T08:30:00Z")
         val file = InvoiceExporter.generatePdf(context, invoice, seller)
         assertTrue(file.length() > 1000)
+        val artifacts = File(context.filesDir, "validation-artifacts").apply { mkdirs() }
+        file.copyTo(File(artifacts, "invoice-without-tax-number.pdf"), overwrite = true)
         PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)).use {
             assertTrue(it.pageCount > 0)
         }
@@ -49,6 +51,8 @@ class InvoicePdfTest {
             )!!
         val invoice = pdfSampleInvoice().copy(seller = seller, issuedAt = "2026-10-23T08:30:00Z")
         val file = InvoiceExporter.generatePdf(context, invoice, seller)
+        val artifacts = File(context.filesDir, "validation-artifacts").apply { mkdirs() }
+        file.copyTo(File(artifacts, "custom-logo-invoice.pdf"), overwrite = true)
         PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)).use { renderer ->
             renderer.openPage(0).use { page ->
                 val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)

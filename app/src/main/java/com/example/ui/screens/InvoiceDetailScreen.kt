@@ -363,10 +363,10 @@ fun InvoiceDetailScreen(
                                 )
                                 if (company.vatNumber.isNotBlank()) {
                                     Text(
-                                    text = "الرقم الضريبي: ${company.vatNumber}",
-                                    color = GlassBlue,
-                                    style = MaterialTheme.typography.labelSmall
-                                )
+                                        text = "الرقم الضريبي: ${company.vatNumber}",
+                                        color = GlassBlue,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
                                 }
                             }
                         }

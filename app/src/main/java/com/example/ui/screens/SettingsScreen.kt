@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.branding.CompanyLogoStore
 import com.example.ui.components.CompanyLogo
 import kotlinx.coroutines.Dispatchers
@@ -83,7 +84,7 @@ fun SettingsScreen(
     var email by remember { mutableStateOf(company.email) }
     var bankName by remember { mutableStateOf(company.bankName) }
     var iban by remember { mutableStateOf(company.iban) }
-    var logoFileName by remember { mutableStateOf(company.logoFileName) }
+    var logoFileName by rememberSaveable { mutableStateOf(company.logoFileName) }
     var importingLogo by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
