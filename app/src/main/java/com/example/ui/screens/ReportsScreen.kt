@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.export.InvoiceExporter
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.example.model.InvoiceStatus
 import com.example.ui.components.GlassCard
 import com.example.ui.components.ZatcaVerificationTag
@@ -63,9 +66,18 @@ fun ReportsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val stats by viewModel.stats.collectAsState()
     val company by viewModel.companyProfile.collectAsState()
     val invoices by viewModel.allInvoices.collectAsState()
+    val calendar = java.util.Calendar.getInstance()
+    val year = calendar.get(java.util.Calendar.YEAR)
+    val quarter = calendar.get(java.util.Calendar.MONTH) / 3 + 1
+    val startMonth = (quarter - 1) * 3 + 1
+    val start = String.format(java.util.Locale.US, "%04d-%02d-01", year, startMonth)
+    val end = if (quarter == 4) "${year + 1}-01-01" else String.format(java.util.Locale.US, "%04d-%02d-01", year, startMonth + 3)
+    val reportInvoices = invoices.filter { it.status != com.example.model.InvoiceStatus.DRAFT && it.issueDate >= start && it.issueDate < end }
+    val stats = com.example.viewmodel.calculateFinancialStats(reportInvoices)
+    val exportScope = androidx.compose.runtime.rememberCoroutineScope()
+    var exporting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
     val numberFormat = NumberFormat.getNumberInstance(Locale.US).apply {
         minimumFractionDigits = 0
@@ -120,7 +132,7 @@ fun ReportsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "ملخص إقرار ضريبة القيمة المضافة (الربع الرابع 2026)",
+                            text = "ملخص فواتير الربع $quarter لعام $year",
                             color = RoyalGold,
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                         )
@@ -142,7 +154,7 @@ fun ReportsScreen(
                             )
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(text = "ضريبة المخرجات المستحقة (15%)", color = GlassBlue, style = MaterialTheme.typography.labelSmall)
+                            Text(text = "إجمالي الضريبة المسجلة للفترة", color = GlassBlue, style = MaterialTheme.typography.labelSmall)
                             Text(
                                 text = "${numberFormat.format(stats.totalVat)} ${company.currencyAr}",
                                 color = GlassBlue,
@@ -246,12 +258,18 @@ fun ReportsScreen(
         // Export All Invoices to CSV
         item {
             Button(
+                enabled = !exporting && reportInvoices.isNotEmpty(),
                 onClick = {
-                    if (invoices.isNotEmpty()) {
-                        val first = invoices.first()
-                        val csv = InvoiceExporter.generateCsv(context, first, company)
-                        InvoiceExporter.shareFile(context, csv, "text/csv", "سجل الفواتير الشامل")
-                        Toast.makeText(context, "تم تجهيز ملف التقرير CSV", Toast.LENGTH_SHORT).show()
+                    exportScope.launch {
+                        exporting = true
+                        try {
+                            val csv = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                InvoiceExporter.generateCsv(context, reportInvoices, company)
+                            }
+                            InvoiceExporter.shareFile(context, csv, "text/csv", "فواتير الفترة")
+                        } catch (error: Exception) {
+                            Toast.makeText(context, error.message ?: "تعذر تصدير التقرير", Toast.LENGTH_LONG).show()
+                        } finally { exporting = false }
                     }
                 },
                 modifier = Modifier
@@ -262,7 +280,7 @@ fun ReportsScreen(
             ) {
                 Icon(imageVector = Icons.Default.FileDownload, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "تصدير التقرير المالي كـ CSV", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(text = "تصدير جميع فواتير الفترة CSV", color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
 

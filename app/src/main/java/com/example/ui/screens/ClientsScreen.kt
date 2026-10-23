@@ -383,16 +383,17 @@ fun ClientsScreen(
                                 Toast.makeText(context, "يرجى إدخال اسم العميل أو المنشأة", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
-                            viewModel.addNewClient(
+                            if (viewModel.addNewClient(
                                 name = name.ifEmpty { companyName },
                                 company = companyName.ifEmpty { name },
-                                phone = phone.ifEmpty { "+966 50 000 0000" },
+                                phone = phone.trim(),
                                 email = email,
-                                vatNumber = vatNumber.ifEmpty { "300000000000003" },
-                                address = address.ifEmpty { "الرياض" }
-                            )
-                            showAddDialog = false
-                            Toast.makeText(context, "تم حفظ العميل بنجاح", Toast.LENGTH_SHORT).show()
+                                vatNumber = vatNumber.trim(),
+                                address = address.trim()
+                            )) {
+                                showAddDialog = false
+                                Toast.makeText(context, "تم حفظ العميل بنجاح", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = RoyalGold),

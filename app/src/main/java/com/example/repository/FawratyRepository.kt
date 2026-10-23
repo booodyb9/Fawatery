@@ -1,88 +1,166 @@
 package com.example.repository
 
-import com.example.model.CatalogProduct
-import com.example.model.Client
-import com.example.model.CompanyProfile
-import com.example.model.Invoice
-import com.example.model.InvoiceItem
-import com.example.model.InvoiceStatus
+import android.content.Context
+import com.example.FawratyApplication
+import com.example.model.*
+import com.example.reminders.ReminderOptions
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
-class FawratyRepository {
+internal data class InvoiceStore(
+    val version: Int = 1,
+    val company: CompanyProfile = CompanyProfile(),
+    val clients: List<Client> = emptyList(),
+    val catalog: List<CatalogProduct> = defaultCatalog(),
+    val invoices: List<Invoice> = emptyList(),
+    val nextNumbers: Map<String, Int> = emptyMap(),
+    val reminderOptions: ReminderOptions = ReminderOptions()
+)
 
+/** Offline durable storage. Existing snapshots are never replaced when loading fails. */
+class FawratyRepository(context: Context = FawratyApplication.appContext) {
+    private val prefs = context.getSharedPreferences("fawraty_records", Context.MODE_PRIVATE)
+    private val adapter = Moshi.Builder().add(KotlinJsonAdapterFactory()).build().adapter(InvoiceStore::class.java)
     private val _companyProfile = MutableStateFlow(CompanyProfile())
-    val companyProfile: StateFlow<CompanyProfile> = _companyProfile.asStateFlow()
-
+    val companyProfile = _companyProfile.asStateFlow()
     private val _clients = MutableStateFlow<List<Client>>(emptyList())
-    val clients: StateFlow<List<Client>> = _clients.asStateFlow()
-
+    val clients = _clients.asStateFlow()
     private val _catalog = MutableStateFlow<List<CatalogProduct>>(emptyList())
-    val catalog: StateFlow<List<CatalogProduct>> = _catalog.asStateFlow()
-
+    val catalog = _catalog.asStateFlow()
     private val _invoices = MutableStateFlow<List<Invoice>>(emptyList())
-    val invoices: StateFlow<List<Invoice>> = _invoices.asStateFlow()
+    val invoices = _invoices.asStateFlow()
+    private val _reminderOptions = MutableStateFlow(ReminderOptions())
+    val reminderOptions = _reminderOptions.asStateFlow()
+    private val _storageError = MutableStateFlow<String?>(null)
+    val storageError = _storageError.asStateFlow()
 
     init {
-        initSampleData()
+        synchronized(storageLock) {
+            try { publish(read()) }
+            catch (_: Exception) { _storageError.value = "تعذر قراءة البيانات المحفوظة. لم يتم حذفها أو استبدالها." }
+        }
     }
 
-    private fun initSampleData() {
-        val sampleClients = listOf(
-            Client(
-                id = "C-101",
-                name = "م. سلطان القحطاني",
-                company = "مجموعة الرواد للمقاولات والتطوير",
-                phone = "+966 50 123 4567",
-                email = "sultan@alrowad-sa.com",
-                vatNumber = "300456789100003",
-                address = "الرياض - حي الملقا، طريق أنس بن مالك",
-                totalBilled = 384500.0,
-                outstandingBalance = 0.0,
-                invoicesCount = 3
-            ),
-            Client(
-                id = "C-102",
-                name = "عبد العزيز بن فهد آل سعود",
-                company = "مكتب العمارة النجدية الحديثة",
-                phone = "+966 55 987 6543",
-                email = "abdulaziz@najd-arch.com",
-                vatNumber = "300987654300003",
-                address = "الرياض - حي حطين، مشروع الفلل الفاخرة",
-                totalBilled = 145000.0,
-                outstandingBalance = 52500.0,
-                invoicesCount = 2
-            ),
-            Client(
-                id = "C-103",
-                name = "د. نورة الشمري",
-                company = "شركة آفاق العقارية للمجمعات التجارية",
-                phone = "+966 54 321 8899",
-                email = "noura@afaq-realestate.sa",
-                vatNumber = "310555666700003",
-                address = "الرياض - حي العليا، طريق الملك عبد العزيز",
-                totalBilled = 89000.0,
-                outstandingBalance = 89000.0,
-                invoicesCount = 1
-            ),
-            Client(
-                id = "C-104",
-                name = "م. خالد التميمي",
-                company = "استشارات الديكور المعماري الداخلي",
-                phone = "+966 56 777 4433",
-                email = "khaled@tamimi-design.com",
-                vatNumber = "300222333400003",
-                address = "الرياض - حي النخيل الغربي",
-                totalBilled = 34500.0,
-                outstandingBalance = 0.0,
-                invoicesCount = 2
-            )
-        )
-        _clients.value = sampleClients
+    private fun read(): InvoiceStore {
+        val raw = prefs.getString("snapshot", null) ?: return InvoiceStore()
+        return requireNotNull(adapter.fromJson(raw)) { "تعذر قراءة البيانات المحفوظة" }.also {
+            require(it.version == 1) { "إصدار البيانات غير مدعوم" }
+        }
+    }
 
-        val sampleCatalog = listOf(
+    private fun publish(data: InvoiceStore) {
+        val invoices = data.invoices.map { it.copy(status = it.effectiveStatus()) }
+        _companyProfile.value = data.company
+        _catalog.value = data.catalog
+        _invoices.value = invoices
+        _reminderOptions.value = data.reminderOptions
+        _clients.value = data.clients.map { client ->
+            val related = invoices.filter { it.clientId == client.id && it.status != InvoiceStatus.DRAFT }
+            client.copy(
+                totalBilled = moneySum(related.map { it.grandTotal }),
+                outstandingBalance = moneySum(related.filter { it.status != InvoiceStatus.PAID }.map { it.grandTotal }),
+                invoicesCount = related.size
+            )
+        }
+    }
+
+    private fun update(transform: (InvoiceStore) -> InvoiceStore) = synchronized(storageLock) {
+        check(_storageError.value == null) { _storageError.value ?: "التخزين غير متاح" }
+        val next = transform(read())
+        check(prefs.edit().putString("snapshot", adapter.toJson(next)).commit()) { "تعذر الحفظ المحلي؛ لم تُؤكد العملية" }
+        publish(next)
+    }
+
+    fun refreshDates() = synchronized(storageLock) {
+        if (_storageError.value == null) publish(read())
+    }
+
+    /** Reserve persistently; deleting invoices never reuses a reserved number. */
+    fun generateNextInvoiceNumber(): String {
+        var result = ""
+        update { data ->
+            val year = InvoiceDates.today().take(4)
+            val prefix = "INV-$year-"
+            val maximum = data.invoices.mapNotNull { it.invoiceNumber.takeIf { n -> n.startsWith(prefix) }?.removePrefix(prefix)?.toIntOrNull() }.maxOrNull() ?: 0
+            val next = maxOf(data.nextNumbers[year] ?: 1, maximum + 1)
+            require(next < Int.MAX_VALUE)
+            result = prefix + next.toString().padStart(3, '0')
+            data.copy(nextNumbers = data.nextNumbers + (year to next + 1))
+        }
+        return result
+    }
+
+    fun addInvoice(invoice: Invoice): Invoice {
+        var saved = invoice
+        update { data ->
+            require(data.invoices.none { it.id == invoice.id || it.invoiceNumber == invoice.invoiceNumber }) { "رقم الفاتورة مستخدم بالفعل" }
+            val existing = data.clients.find { it.id == invoice.clientId }
+                ?: data.clients.find { it.name == invoice.clientName && it.company == invoice.clientCompany && it.phone == invoice.clientPhone }
+            val client = existing ?: Client(UUID.randomUUID().toString(), invoice.clientName, invoice.clientCompany,
+                invoice.clientPhone, invoice.clientEmail, invoice.clientVatNumber, invoice.clientAddress)
+            saved = invoice.copy(clientId = client.id)
+            data.copy(
+                invoices = listOf(saved) + data.invoices,
+                clients = if (existing == null) listOf(client) + data.clients else data.clients
+            )
+        }
+        return saved
+    }
+
+    fun updateInvoiceStatus(invoiceId: String, newStatus: InvoiceStatus) {
+        update { data -> data.copy(invoices = data.invoices.map { invoice ->
+            if (invoice.id != invoiceId) invoice else invoice.copy(
+                status = newStatus,
+                issuedAt = if (invoice.issuedAt.isBlank() && newStatus != InvoiceStatus.DRAFT) InvoiceDates.utcNow() else invoice.issuedAt,
+                seller = invoice.seller ?: data.company
+            )
+        }) }
+    }
+
+    fun deleteInvoice(invoiceId: String) {
+        update { it.copy(invoices = it.invoices.filterNot { invoice -> invoice.id == invoiceId }) }
+    }
+
+    fun duplicateInvoice(invoiceId: String): Invoice? {
+        val source = _invoices.value.find { it.id == invoiceId } ?: return null
+        return addInvoice(source.copy(
+            id = UUID.randomUUID().toString(), invoiceNumber = generateNextInvoiceNumber(),
+            issueDate = InvoiceDates.today(), dueDate = InvoiceDates.plusDays(InvoiceDates.today(), 14),
+            status = InvoiceStatus.DRAFT, issuedAt = "", seller = companyProfile.value,
+            bankName = companyProfile.value.bankName, iban = companyProfile.value.iban
+        ))
+    }
+
+    fun addClient(client: Client) {
+        require(client.name.isNotBlank()) { "اسم العميل مطلوب" }
+        update { data ->
+            require(data.clients.none { it.id == client.id })
+            data.copy(clients = listOf(client) + data.clients)
+        }
+    }
+
+    fun addCatalogProduct(product: CatalogProduct) {
+        require(product.defaultPrice.isFinite() && product.defaultPrice >= 0)
+        update { it.copy(catalog = listOf(product) + it.catalog) }
+    }
+
+    fun updateCompanyProfile(profile: CompanyProfile) {
+        require(profile.companyName.isNotBlank()) { "اسم المنشأة مطلوب" }
+        require(profile.vatNumber.isBlank() || Regex("3[0-9]{13}3").matches(profile.vatNumber)) { "راجع الرقم الضريبي للمنشأة" }
+        require(profile.defaultTaxRate.isFinite() && profile.defaultTaxRate in 0.0..1.0)
+        update { it.copy(company = profile) }
+    }
+
+    fun updateReminderOptions(options: ReminderOptions) { update { it.copy(reminderOptions = options) } }
+
+    companion object { private val storageLock = Any() }
+}
+
+private fun defaultCatalog(): List<CatalogProduct> {
+    return listOf(
             CatalogProduct(
                 id = "CAT-01",
                 name = "واجهات زجاجية مزدوجة معزولة حرارياً Low-E",
@@ -172,185 +250,4 @@ class FawratyRepository {
                 warranty = "10 سنوات عزل مائي وحراري كامل"
             )
         )
-        _catalog.value = sampleCatalog
-
-        val sampleInvoices = listOf(
-            Invoice(
-                id = "INV-2026-001",
-                invoiceNumber = "INV-2026-001",
-                clientName = "م. سلطان القحطاني",
-                clientCompany = "مجموعة الرواد للمقاولات والتطوير",
-                clientPhone = "+966 50 123 4567",
-                clientEmail = "sultan@alrowad-sa.com",
-                clientVatNumber = "300456789100003",
-                clientAddress = "الرياض - طريق أنس بن مالك",
-                issueDate = "2026-10-10",
-                dueDate = "2026-10-24",
-                projectCategory = "واجهات أبراج ومباني تجارية",
-                items = listOf(
-                    InvoiceItem(
-                        id = "ITEM-1",
-                        description = "واجهات زجاجية مزدوجة معزولة حرارياً Low-E (برج الرواد التجاري)",
-                        quantity = 350.0,
-                        unitPrice = 450.0,
-                        unit = "متر مربع",
-                        discount = 5000.0
-                    ),
-                    InvoiceItem(
-                        id = "ITEM-2",
-                        description = "درابزين زجاجي إستركشر للشرفات البانورامية",
-                        quantity = 60.0,
-                        unitPrice = 580.0,
-                        unit = "متر طولي",
-                        discount = 0.0
-                    )
-                ),
-                status = InvoiceStatus.PAID,
-                notes = "تم اعتماد المواصفات الهندسية من الاستشاري الهندسي. شامل التوريد والتركيب والرافعات الهيدروليكية."
-            ),
-            Invoice(
-                id = "INV-2026-002",
-                invoiceNumber = "INV-2026-002",
-                clientName = "عبد العزيز بن فهد آل سعود",
-                clientCompany = "مكتب العمارة النجدية الحديثة",
-                clientPhone = "+966 55 987 6543",
-                clientEmail = "abdulaziz@najd-arch.com",
-                clientVatNumber = "300987654300003",
-                clientAddress = "الرياض - حي حطين",
-                issueDate = "2026-10-12",
-                dueDate = "2026-10-26",
-                projectCategory = "فلل سكنية فاخرة",
-                items = listOf(
-                    InvoiceItem(
-                        id = "ITEM-3",
-                        description = "زجاج ذكي قابل للتبديل Smart Glass لغرف الاجتماعات والصالة الرئيسية",
-                        quantity = 28.0,
-                        unitPrice = 1200.0,
-                        unit = "متر مربع",
-                        discount = 1100.0
-                    ),
-                    InvoiceItem(
-                        id = "ITEM-4",
-                        description = "مرايا ديكورية معمارية برونزية مع شريط LED مخفي",
-                        quantity = 40.0,
-                        unitPrice = 340.0,
-                        unit = "متر مربع",
-                        discount = 0.0
-                    )
-                ),
-                status = InvoiceStatus.PENDING,
-                notes = "الدفعة المستحقة هي الدفعة الثانية لتوريد الزجاج الذكي والمرايا بعد الانتهاء من المقاسات الليزرية."
-            ),
-            Invoice(
-                id = "INV-2026-003",
-                invoiceNumber = "INV-2026-003",
-                clientName = "د. نورة الشمري",
-                clientCompany = "شركة آفاق العقارية للمجمعات التجارية",
-                clientPhone = "+966 54 321 8899",
-                clientEmail = "noura@afaq-realestate.sa",
-                clientVatNumber = "310555666700003",
-                clientAddress = "الرياض - حي العليا",
-                issueDate = "2026-09-28",
-                dueDate = "2026-10-05",
-                projectCategory = "مجمعات تجارية ومطاعم",
-                items = listOf(
-                    InvoiceItem(
-                        id = "ITEM-5",
-                        description = "قواطع مكاتب زجاجية بدون إطار لمقر الإدارة العامة",
-                        quantity = 140.0,
-                        unitPrice = 360.0,
-                        unit = "متر مربع",
-                        discount = 2000.0
-                    ),
-                    InvoiceItem(
-                        id = "ITEM-6",
-                        description = "أبواب زجاجية سيكوريت مع أجهزة غلق هيدروليكية ألمانية",
-                        quantity = 8.0,
-                        unitPrice = 2400.0,
-                        unit = "قطعة",
-                        discount = 0.0
-                    )
-                ),
-                status = InvoiceStatus.OVERDUE,
-                notes = "يرجى تسوية المبلغ المستحق في أقرب وقت لتفادي تأخير جدول التوريد النهائي."
-            ),
-            Invoice(
-                id = "INV-2026-004",
-                invoiceNumber = "INV-2026-004",
-                clientName = "م. خالد التميمي",
-                clientCompany = "استشارات الديكور المعماري الداخلي",
-                clientPhone = "+966 56 777 4433",
-                clientEmail = "khaled@tamimi-design.com",
-                clientVatNumber = "300222333400003",
-                clientAddress = "الرياض - حي النخيل الغربي",
-                issueDate = "2026-10-14",
-                dueDate = "2026-10-28",
-                projectCategory = "ديكورات داخلية خاصة",
-                items = listOf(
-                    InvoiceItem(
-                        id = "ITEM-7",
-                        description = "كبائن شاور زجاجية مقاومة للتكلس مع إكسسوارات ذهبية مطفية",
-                        quantity = 6.0,
-                        unitPrice = 1850.0,
-                        unit = "قطعة",
-                        discount = 600.0
-                    )
-                ),
-                status = InvoiceStatus.DRAFT,
-                notes = "مسودة عرض سعر مبدئية قيد المراجعة الفنية مع المكتب الاستشاري."
-            )
-        )
-        _invoices.value = sampleInvoices
-    }
-
-    fun addInvoice(invoice: Invoice) {
-        val list = _invoices.value.toMutableList()
-        list.add(0, invoice)
-        _invoices.value = list
-    }
-
-    fun updateInvoiceStatus(invoiceId: String, newStatus: InvoiceStatus) {
-        _invoices.value = _invoices.value.map {
-            if (it.id == invoiceId) it.copy(status = newStatus) else it
-        }
-    }
-
-    fun deleteInvoice(invoiceId: String) {
-        _invoices.value = _invoices.value.filter { it.id != invoiceId }
-    }
-
-    fun duplicateInvoice(invoiceId: String): Invoice? {
-        val source = _invoices.value.find { it.id == invoiceId } ?: return null
-        val nextNum = "INV-2026-${(_invoices.value.size + 1).toString().padStart(3, '0')}"
-        val dup = source.copy(
-            id = UUID.randomUUID().toString(),
-            invoiceNumber = nextNum,
-            issueDate = "2026-10-14",
-            dueDate = "2026-10-28",
-            status = InvoiceStatus.DRAFT
-        )
-        addInvoice(dup)
-        return dup
-    }
-
-    fun addClient(client: Client) {
-        val list = _clients.value.toMutableList()
-        list.add(0, client)
-        _clients.value = list
-    }
-
-    fun addCatalogProduct(product: CatalogProduct) {
-        val list = _catalog.value.toMutableList()
-        list.add(0, product)
-        _catalog.value = list
-    }
-
-    fun updateCompanyProfile(profile: CompanyProfile) {
-        _companyProfile.value = profile
-    }
-
-    fun generateNextInvoiceNumber(): String {
-        val count = _invoices.value.size + 1
-        return "INV-2026-${count.toString().padStart(3, '0')}"
-    }
 }

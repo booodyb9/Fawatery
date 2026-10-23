@@ -54,7 +54,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Client
-import com.example.model.InvoiceItem
+import com.example.model.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.example.model.InvoiceStatus
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.CardBackgroundGlass
@@ -82,6 +84,8 @@ fun InvoiceEditorScreen(
     val company by viewModel.companyProfile.collectAsState()
     val prefillProduct by viewModel.prefillProduct.collectAsState()
 
+    val formErrors = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    var selectedClientId by remember { mutableStateOf<String?>(null) }
     var clientName by remember { mutableStateOf("") }
     var clientCompany by remember { mutableStateOf("") }
     var clientPhone by remember { mutableStateOf("") }
@@ -89,8 +93,8 @@ fun InvoiceEditorScreen(
     var clientVatNumber by remember { mutableStateOf("") }
     var clientAddress by remember { mutableStateOf("") }
 
-    var issueDate by remember { mutableStateOf("2026-10-14") }
-    var dueDate by remember { mutableStateOf("2026-10-28") }
+    var issueDate by remember { mutableStateOf(InvoiceDates.today()) }
+    var dueDate by remember { mutableStateOf(InvoiceDates.plusDays(InvoiceDates.today(), 14)) }
     var projectCategory by remember { mutableStateOf("واجهات أبراج ومباني تجارية") }
     var notes by remember { mutableStateOf("الضمان 10 سنوات على أعمال الزجاج المعماري والعزل الحراري وكود البناء السعودي.") }
     var paymentTerms by remember { mutableStateOf("50% دفعة أولى، 40% عند التوريد، 10% عند التسليم النهائي.") }
@@ -105,7 +109,7 @@ fun InvoiceEditorScreen(
                     InvoiceItem(
                         id = UUID.randomUUID().toString(),
                         description = prefillProduct!!.name,
-                        quantity = 10.0,
+                        quantity = 1.0,
                         unitPrice = prefillProduct!!.defaultPrice,
                         unit = prefillProduct!!.unit,
                         discount = 0.0
@@ -115,11 +119,11 @@ fun InvoiceEditorScreen(
                 add(
                     InvoiceItem(
                         id = UUID.randomUUID().toString(),
-                        description = "واجهات زجاجية مزدوجة معزولة حرارياً Low-E",
-                        quantity = 50.0,
-                        unitPrice = 450.0,
+                        description = "",
+                        quantity = 1.0,
+                        unitPrice = 0.0,
                         unit = "متر مربع",
-                        discount = 500.0
+                        discount = 0.0
                     )
                 )
             }
@@ -133,9 +137,10 @@ fun InvoiceEditorScreen(
         }
     }
 
-    val subtotal = items.sumOf { it.totalWithoutVat }
-    val vatAmount = subtotal * company.defaultTaxRate
-    val grandTotal = subtotal + vatAmount
+    val totals = calculateInvoiceTotals(items, company.defaultTaxRate)
+    val subtotal = totals.subtotal
+    val vatAmount = totals.vat
+    val grandTotal = totals.grandTotal
 
     LazyColumn(
         modifier = modifier
@@ -234,6 +239,7 @@ fun InvoiceEditorScreen(
                                             }
                                         },
                                         onClick = {
+                                            selectedClientId = client.id
                                             clientName = client.name
                                             clientCompany = client.company
                                             clientPhone = client.phone
@@ -252,7 +258,7 @@ fun InvoiceEditorScreen(
 
                     OutlinedTextField(
                         value = clientName,
-                        onValueChange = { clientName = it },
+                        onValueChange = { clientName = it; selectedClientId = null },
                         label = { Text("اسم العميل / المسؤول") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
@@ -261,7 +267,7 @@ fun InvoiceEditorScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = clientCompany,
-                        onValueChange = { clientCompany = it },
+                        onValueChange = { clientCompany = it; selectedClientId = null },
                         label = { Text("اسم المنشأة / الشركة أو المشروع") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
@@ -274,7 +280,7 @@ fun InvoiceEditorScreen(
                     ) {
                         OutlinedTextField(
                             value = clientPhone,
-                            onValueChange = { clientPhone = it },
+                            onValueChange = { clientPhone = it; selectedClientId = null },
                             label = { Text("رقم الهاتف") },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
@@ -438,24 +444,31 @@ fun InvoiceEditorScreen(
         }
 
         // List of Line Items with Editable Fields
-        itemsIndexed(items) { index, item ->
+        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
             var desc by remember(item.id) { mutableStateOf(item.description) }
             var qtyStr by remember(item.id) { mutableStateOf(item.quantity.toString()) }
             var priceStr by remember(item.id) { mutableStateOf(item.unitPrice.toString()) }
             var unitStr by remember(item.id) { mutableStateOf(item.unit) }
             var discountStr by remember(item.id) { mutableStateOf(item.discount.toString()) }
+            androidx.compose.runtime.LaunchedEffect(item.id) {
+                if (item.description.isBlank()) formErrors[item.id] = "وصف البند مطلوب"
+            }
 
             fun updateItem() {
-                val q = qtyStr.toDoubleOrNull() ?: 1.0
-                val p = priceStr.toDoubleOrNull() ?: 0.0
-                val d = discountStr.toDoubleOrNull() ?: 0.0
-                items[index] = item.copy(
-                    description = desc,
-                    quantity = q,
-                    unitPrice = p,
-                    unit = unitStr,
-                    discount = d
-                )
+                val quantity = parseInvoiceDecimal(qtyStr)
+                val price = parseInvoiceDecimal(priceStr)
+                val discount = parseInvoiceDecimal(discountStr)
+                if (quantity == null || price == null || discount == null) {
+                    formErrors[item.id] = "أدخل الكمية والسعر والخصم كأرقام صحيحة"
+                    return
+                }
+                try {
+                    val updated = item.copy(description = desc, quantity = quantity, unitPrice = price, unit = unitStr, discount = discount)
+                    items[index] = updated
+                    if (desc.isBlank()) formErrors[item.id] = "وصف البند مطلوب" else formErrors.remove(item.id)
+                } catch (error: IllegalArgumentException) {
+                    formErrors[item.id] = error.message ?: "قيم البند غير صالحة"
+                }
             }
 
             GlassCard(
@@ -475,7 +488,8 @@ fun InvoiceEditorScreen(
                         )
                         if (items.size > 1) {
                             IconButton(
-                                onClick = { items.removeAt(index) },
+                                onClick = { formErrors.remove(item.id)
+                                        items.removeAt(index) },
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
@@ -653,27 +667,36 @@ fun InvoiceEditorScreen(
                         Toast.makeText(context, "يرجى إدخال اسم العميل", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
+                    if (formErrors.isNotEmpty()) {
+                        Toast.makeText(context, formErrors.values.first(), Toast.LENGTH_LONG).show()
+                        return@Button
+                    }
                     if (items.isEmpty()) {
                         Toast.makeText(context, "يرجى إضافة بند واحد على الأقل", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
 
+                    try {
                     viewModel.createInvoice(
                         clientName = clientName,
                         clientCompany = clientCompany.ifEmpty { clientName },
-                        clientPhone = clientPhone.ifEmpty { "+966 50 000 0000" },
+                        clientPhone = clientPhone.trim(),
                         clientEmail = clientEmail,
-                        clientVatNumber = clientVatNumber.ifEmpty { "300000000000003" },
-                        clientAddress = clientAddress.ifEmpty { "الرياض - المملكة العربية السعودية" },
+                        clientVatNumber = clientVatNumber.trim(),
+                        clientAddress = clientAddress.trim(),
                         issueDate = issueDate,
                         dueDate = dueDate,
                         projectCategory = projectCategory,
                         items = items.toList(),
                         notes = notes,
                         paymentTerms = paymentTerms,
-                        status = InvoiceStatus.PENDING
+                        status = InvoiceStatus.PENDING,
+                        clientId = selectedClientId
                     )
-                    Toast.makeText(context, "تم إصدار الفاتورة الضريبية بنجاح!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "تم حفظ الفاتورة بنجاح", Toast.LENGTH_SHORT).show()
+                    } catch (error: Exception) {
+                        Toast.makeText(context, error.message ?: "تعذر حفظ الفاتورة", Toast.LENGTH_LONG).show()
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()

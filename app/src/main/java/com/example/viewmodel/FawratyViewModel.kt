@@ -16,6 +16,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import java.util.UUID
+import com.example.model.*
+import com.example.reminders.ReminderOptions
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 enum class NavigationTab(val titleAr: String, val titleEn: String) {
     DASHBOARD("الرئيسية", "Dashboard"),
@@ -71,23 +76,30 @@ class FawratyViewModel(
     private val _prefillProduct = MutableStateFlow<CatalogProduct?>(null)
     val prefillProduct: StateFlow<CatalogProduct?> = _prefillProduct.asStateFlow()
 
-    val stats: StateFlow<FinancialStats> = allInvoices.combine(companyProfile) { invoices, _ ->
-        val totalInvoiced = invoices.sumOf { it.grandTotal }
-        val totalPaid = invoices.filter { it.status == InvoiceStatus.PAID }.sumOf { it.grandTotal }
-        val totalPending = invoices.filter { it.status == InvoiceStatus.PENDING || it.status == InvoiceStatus.OVERDUE }.sumOf { it.grandTotal }
-        val totalVat = invoices.sumOf { it.vatAmount }
+    val reminderOptions = repository.reminderOptions
+    val storageError = repository.storageError
+    private val _lastError = MutableStateFlow<String?>(null)
+    val lastError = _lastError.asStateFlow()
+    fun clearError() { _lastError.value = null }
+    private fun change(action: () -> Unit): Boolean = try {
+        action()
+        true
+    } catch (error: Exception) {
+        _lastError.value = error.message ?: "تعذر حفظ التغيير"
+        false
+    }
 
-        FinancialStats(
-            totalInvoiced = totalInvoiced,
-            totalPaid = totalPaid,
-            totalPending = totalPending,
-            totalVat = totalVat,
-            totalCount = invoices.size,
-            paidCount = invoices.count { it.status == InvoiceStatus.PAID },
-            pendingCount = invoices.count { it.status == InvoiceStatus.PENDING },
-            overdueCount = invoices.count { it.status == InvoiceStatus.OVERDUE },
-            draftCount = invoices.count { it.status == InvoiceStatus.DRAFT }
-        )
+    init {
+        viewModelScope.launch {
+            while (isActive) {
+                delay(60_000)
+                repository.refreshDates()
+            }
+        }
+    }
+
+    val stats: StateFlow<FinancialStats> = allInvoices.combine(companyProfile) { invoices, _ ->
+        calculateFinancialStats(invoices)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinancialStats())
 
     val filteredInvoices: StateFlow<List<Invoice>> = combine(
@@ -156,8 +168,10 @@ class FawratyViewModel(
         items: List<InvoiceItem>,
         notes: String,
         paymentTerms: String,
-        status: InvoiceStatus = InvoiceStatus.PENDING
+        status: InvoiceStatus = InvoiceStatus.PENDING,
+        clientId: String? = null
     ): Invoice {
+        require(Regex("3[0-9]{13}3").matches(companyProfile.value.vatNumber)) { "أكمل الرقم الضريبي الصحيح للمنشأة من الإعدادات قبل إصدار فاتورة ضريبية" }
         val nextNumber = repository.generateNextInvoiceNumber()
         val invoice = Invoice(
             id = UUID.randomUUID().toString(),
@@ -177,22 +191,25 @@ class FawratyViewModel(
             notes = notes,
             paymentTerms = paymentTerms,
             bankName = companyProfile.value.bankName,
-            iban = companyProfile.value.iban
+            iban = companyProfile.value.iban,
+            issuedAt = InvoiceDates.utcNow(),
+            seller = companyProfile.value,
+            clientId = clientId
         )
-        repository.addInvoice(invoice)
-        _selectedInvoice.value = invoice
+        val saved = repository.addInvoice(invoice)
+        _selectedInvoice.value = saved
         _activeSubScreen.value = SubScreen.INVOICE_DETAIL
-        return invoice
+        return saved
     }
 
-    fun updateInvoiceStatus(invoiceId: String, status: InvoiceStatus) {
+    fun updateInvoiceStatus(invoiceId: String, status: InvoiceStatus): Boolean = change {
         repository.updateInvoiceStatus(invoiceId, status)
         if (_selectedInvoice.value?.id == invoiceId) {
-            _selectedInvoice.value = _selectedInvoice.value?.copy(status = status)
+            _selectedInvoice.value = repository.invoices.value.find { it.id == invoiceId }
         }
     }
 
-    fun duplicateInvoice(invoiceId: String) {
+    fun duplicateInvoice(invoiceId: String): Boolean = change {
         val dup = repository.duplicateInvoice(invoiceId)
         if (dup != null) {
             _selectedInvoice.value = dup
@@ -200,7 +217,7 @@ class FawratyViewModel(
         }
     }
 
-    fun deleteInvoice(invoiceId: String) {
+    fun deleteInvoice(invoiceId: String): Boolean = change {
         repository.deleteInvoice(invoiceId)
         if (_selectedInvoice.value?.id == invoiceId) {
             _selectedInvoice.value = null
@@ -215,9 +232,11 @@ class FawratyViewModel(
         email: String,
         vatNumber: String,
         address: String
-    ) {
+    ): Boolean = change {
+        require(name.isNotBlank()) { "اسم العميل مطلوب" }
+        require(vatNumber.isBlank() || Regex("3[0-9]{13}3").matches(vatNumber)) { "الرقم الضريبي للعميل غير صالح" }
         val client = Client(
-            id = "C-${(clients.value.size + 101)}",
+            id = UUID.randomUUID().toString(),
             name = name,
             company = company,
             phone = phone,
@@ -228,7 +247,24 @@ class FawratyViewModel(
         repository.addClient(client)
     }
 
-    fun updateCompanyProfile(profile: CompanyProfile) {
+    fun updateReminderOptions(options: ReminderOptions): Boolean = change { repository.updateReminderOptions(options) }
+
+    fun updateCompanyProfile(profile: CompanyProfile): Boolean = change {
         repository.updateCompanyProfile(profile)
     }
+}
+
+fun calculateFinancialStats(invoices: List<Invoice>): FinancialStats {
+    val finalInvoices = invoices.filter { it.status != InvoiceStatus.DRAFT }
+    return FinancialStats(
+        totalInvoiced = moneySum(finalInvoices.map { it.grandTotal }),
+        totalPaid = moneySum(finalInvoices.filter { it.status == InvoiceStatus.PAID }.map { it.grandTotal }),
+        totalPending = moneySum(finalInvoices.filter { it.status != InvoiceStatus.PAID }.map { it.grandTotal }),
+        totalVat = moneySum(finalInvoices.map { it.vatAmount }),
+        totalCount = invoices.size,
+        paidCount = finalInvoices.count { it.status == InvoiceStatus.PAID },
+        pendingCount = finalInvoices.count { it.status == InvoiceStatus.PENDING },
+        overdueCount = finalInvoices.count { it.status == InvoiceStatus.OVERDUE },
+        draftCount = invoices.count { it.status == InvoiceStatus.DRAFT }
+    )
 }

@@ -56,6 +56,15 @@ jobs:
         with:
           name: fawraty-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload generated PDF validation samples
+        uses: actions/upload-artifact@v4
+        with:
+          name: invoice-pdf-validation
+          path: app/build/validation-artifacts/
+          if-no-files-found: error
           retention-days: 14
 
       - name: Create GitHub Release (On Tag)

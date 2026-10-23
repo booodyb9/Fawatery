@@ -72,6 +72,23 @@ import com.example.viewmodel.SubScreen
 fun FawratyApp(
     viewModel: FawratyViewModel = viewModel()
 ) {
+    val error by viewModel.lastError.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(error) {
+        error?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.clearError()
+        }
+    }
+    val storageError by viewModel.storageError.collectAsState()
+    if (storageError != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {},
+            title = { Text("تعذر فتح البيانات") },
+            text = { Text(storageError ?: "") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { (context as? android.app.Activity)?.finish() }) { Text("إغلاق بأمان") } }
+        )
+    }
     val currentTab by viewModel.selectedTab.collectAsState()
     val activeSubScreen by viewModel.activeSubScreen.collectAsState()
     val selectedInvoice by viewModel.selectedInvoice.collectAsState()

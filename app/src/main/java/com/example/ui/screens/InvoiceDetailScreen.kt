@@ -61,6 +61,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.export.InvoiceExporter
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.example.export.ReminderType
 import com.example.model.Invoice
 import com.example.model.InvoiceStatus
@@ -93,7 +95,10 @@ fun InvoiceDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val company by viewModel.companyProfile.collectAsState()
+    val currentCompany by viewModel.companyProfile.collectAsState()
+    val company = invoice.seller ?: currentCompany
+    val exportScope = androidx.compose.runtime.rememberCoroutineScope()
+    var exporting by remember { mutableStateOf(false) }
 
     var showStatusDropdown by remember { mutableStateOf(false) }
     var showReminderDialog by remember { mutableStateOf(false) }
@@ -106,7 +111,7 @@ fun InvoiceDetailScreen(
     }
 
     val zatcaTlvString = remember(invoice, company) {
-        invoice.generateZatcaTlvBase64(company.companyName, company.vatNumber)
+        if (invoice.status == InvoiceStatus.DRAFT) null else runCatching { invoice.generateZatcaTlvBase64(company.companyName, company.vatNumber) }.getOrNull()
     }
 
     LazyColumn(
@@ -147,7 +152,7 @@ fun InvoiceDetailScreen(
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
-                            text = "فاتورة ضريبية رسمية معتمدة",
+                            text = "فاتورة محفوظة محليًا",
                             color = RoyalGold,
                             style = MaterialTheme.typography.labelSmall
                         )
@@ -174,9 +179,10 @@ fun InvoiceDetailScreen(
                                 DropdownMenuItem(
                                     text = { Text(text = status.labelAr, color = TextPrimary) },
                                     onClick = {
-                                        viewModel.updateInvoiceStatus(invoice.id, status)
-                                        showStatusDropdown = false
-                                        Toast.makeText(context, "تم تحديث الحالة إلى: ${status.labelAr}", Toast.LENGTH_SHORT).show()
+                                        if (viewModel.updateInvoiceStatus(invoice.id, status)) {
+                                            showStatusDropdown = false
+                                            Toast.makeText(context, "تم تحديث حالة الفاتورة", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 )
                             }
@@ -205,9 +211,12 @@ fun InvoiceDetailScreen(
                     ) {
                         // PDF Export Button
                         Button(
+                            enabled = !exporting,
                             onClick = {
+                                exportScope.launch {
+                                exporting = true
                                 try {
-                                    val pdfFile = InvoiceExporter.generatePdf(context, invoice, company)
+                                    val pdfFile = withContext(kotlinx.coroutines.Dispatchers.IO) { InvoiceExporter.generatePdf(context, invoice, company) }
                                     InvoiceExporter.shareFile(
                                         context,
                                         pdfFile,
@@ -217,6 +226,7 @@ fun InvoiceDetailScreen(
                                     Toast.makeText(context, "تم تجهيز ملف PDF بنجاح", Toast.LENGTH_SHORT).show()
                                 } catch (e: Exception) {
                                     Toast.makeText(context, "فشل إنشاء PDF: ${e.message}", Toast.LENGTH_LONG).show()
+                                } finally { exporting = false }
                                 }
                             },
                             modifier = Modifier
@@ -242,9 +252,12 @@ fun InvoiceDetailScreen(
 
                         // CSV Export Button
                         Button(
+                            enabled = !exporting,
                             onClick = {
+                                exportScope.launch {
+                                exporting = true
                                 try {
-                                    val csvFile = InvoiceExporter.generateCsv(context, invoice, company)
+                                    val csvFile = withContext(kotlinx.coroutines.Dispatchers.IO) { InvoiceExporter.generateCsv(context, invoice, company) }
                                     InvoiceExporter.shareFile(
                                         context,
                                         csvFile,
@@ -254,6 +267,7 @@ fun InvoiceDetailScreen(
                                     Toast.makeText(context, "تم تجهيز ملف CSV بنجاح", Toast.LENGTH_SHORT).show()
                                 } catch (e: Exception) {
                                     Toast.makeText(context, "فشل إنشاء CSV: ${e.message}", Toast.LENGTH_LONG).show()
+                                } finally { exporting = false }
                                 }
                             },
                             modifier = Modifier
@@ -523,7 +537,7 @@ fun InvoiceDetailScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(text = "ضريبة القيمة المضافة (15%):", color = GlassBlue, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                                Text(text = "ضريبة القيمة المضافة (${invoice.taxRate * 100}%):", color = GlassBlue, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                                 Text(text = "${numberFormat.format(invoice.vatAmount)} ${company.currencyAr}", color = GlassBlue, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
                             }
                             Spacer(modifier = Modifier.height(8.dp))
@@ -591,13 +605,14 @@ fun InvoiceDetailScreen(
                         Spacer(modifier = Modifier.width(16.dp))
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            ZatcaQrCodeView(
-                                dataString = zatcaTlvString,
-                                sizeDp = 130.dp
-                            )
+                            if (zatcaTlvString != null) {
+                                ZatcaQrCodeView(dataString = zatcaTlvString, sizeDp = 130.dp)
+                            } else {
+                                Text("QR غير متاح: أكمل بيانات المنشأة وأصدر الفاتورة", color = TextSecondary)
+                            }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "رمز الاستجابة السريع ZATCA",
+                                text = "QR بيانات الفاتورة",
                                 color = RoyalGoldLight,
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)
                             )
@@ -615,8 +630,7 @@ fun InvoiceDetailScreen(
             ) {
                 OutlinedButton(
                     onClick = {
-                        viewModel.duplicateInvoice(invoice.id)
-                        Toast.makeText(context, "تم تكرار الفاتورة بنجاح", Toast.LENGTH_SHORT).show()
+                        if (viewModel.duplicateInvoice(invoice.id)) Toast.makeText(context, "تم تكرار الفاتورة بنجاح", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),
@@ -634,8 +648,7 @@ fun InvoiceDetailScreen(
 
                 OutlinedButton(
                     onClick = {
-                        viewModel.deleteInvoice(invoice.id)
-                        Toast.makeText(context, "تم حذف الفاتورة", Toast.LENGTH_SHORT).show()
+                        if (viewModel.deleteInvoice(invoice.id)) Toast.makeText(context, "تم حذف الفاتورة", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),

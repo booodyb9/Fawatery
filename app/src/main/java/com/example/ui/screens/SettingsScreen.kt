@@ -79,9 +79,10 @@ fun SettingsScreen(
     var bankName by remember { mutableStateOf(company.bankName) }
     var iban by remember { mutableStateOf(company.iban) }
 
-    var autoRemind3Days by remember { mutableStateOf(true) }
-    var autoRemindDueDate by remember { mutableStateOf(true) }
-    var autoRemindOverdue by remember { mutableStateOf(true) }
+    val reminderOptions by viewModel.reminderOptions.collectAsState()
+    val autoRemind3Days = reminderOptions.threeDaysBefore
+    val autoRemindDueDate = reminderOptions.onDueDate
+    val autoRemindOverdue = reminderOptions.overdue
 
     LazyColumn(
         modifier = modifier
@@ -177,13 +178,13 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "نظام إرسال تذكيرات الدفع الآلية للعملاء",
+                            text = "إظهار اقتراحات تذكير السداد",
                             color = TextPrimary,
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                         )
                     }
                     Text(
-                        text = "إرسال التنبيهات الذكية قبل الموعد ويوم الاستحقاق مباشرة عبر الواتساب وSMS",
+                        text = "تُعرض داخل التطبيق؛ فتح واتساب أو SMS وإرسال الرسالة يحتاج إجراءً منك.",
                         color = TextSecondary,
                         style = MaterialTheme.typography.labelSmall
                     )
@@ -203,14 +204,14 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                             )
                             Text(
-                                text = "إرسال رسالة تذكير ودية للعميل مع بيانات السداد",
+                                text = "إظهار اقتراح تذكير خلال الأيام الثلاثة السابقة للاستحقاق",
                                 color = TextSecondary,
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
                         Switch(
                             checked = autoRemind3Days,
-                            onCheckedChange = { autoRemind3Days = it },
+                            onCheckedChange = { viewModel.updateReminderOptions(reminderOptions.copy(threeDaysBefore = it)) },
                             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = GlassBlue)
                         )
                     }
@@ -237,7 +238,7 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = autoRemindDueDate,
-                            onCheckedChange = { autoRemindDueDate = it },
+                            onCheckedChange = { viewModel.updateReminderOptions(reminderOptions.copy(onDueDate = it)) },
                             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = GlassBlue)
                         )
                     }
@@ -264,7 +265,7 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = autoRemindOverdue,
-                            onCheckedChange = { autoRemindOverdue = it },
+                            onCheckedChange = { viewModel.updateReminderOptions(reminderOptions.copy(overdue = it)) },
                             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StatusOverdue)
                         )
                     }
@@ -390,8 +391,9 @@ fun SettingsScreen(
                         bankName = bankName,
                         iban = iban
                     )
-                    viewModel.updateCompanyProfile(updated)
-                    Toast.makeText(context, "تم حفظ إعدادات الفاتورة بنجاح", Toast.LENGTH_SHORT).show()
+                    if (viewModel.updateCompanyProfile(updated)) {
+                        Toast.makeText(context, "تم حفظ بيانات المنشأة محليًا", Toast.LENGTH_SHORT).show()
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()

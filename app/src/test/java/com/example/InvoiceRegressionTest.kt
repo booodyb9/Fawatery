@@ -15,6 +15,10 @@ import java.util.Locale
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class InvoiceRegressionTest {
+    @org.junit.Before fun resetFixtureStorage() {
+        androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+            .getSharedPreferences("fawraty_records", android.content.Context.MODE_PRIVATE).edit().clear().commit()
+    }
     @Test(expected = IllegalArgumentException::class)
     fun rejectsNegativeDiscount() { InvoiceItem("i", "test", 1.0, 100.0, discount = -50.0) }
 
