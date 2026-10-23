@@ -12,27 +12,23 @@ import com.google.zxing.common.HybridBinarizer
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
-import org.robolectric.annotation.GraphicsMode
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28])
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@RunWith(AndroidJUnit4::class)
 class InvoicePdfTest {
     @Test fun longArabicInvoicePaginatesAndItsPrintedQrDecodes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val company = CompanyProfile(companyName = "منشأة تجريبية للفحص — TEST ONLY", vatNumber = "300000000000003",
             commercialRegistration = "", phone = "", address = "عنوان تجريبي", iban = "")
-        val invoice = sampleInvoice("PDF-TEST").copy(
+        val invoice = pdfSampleInvoice().copy(
             seller = company, issuedAt = "2026-10-23T08:30:00Z",
             items = (1..35).map { InvoiceItem("$it", "بند تجريبي طويل باللغة العربية مع أرقام 123 وأحرف English ".repeat(3), 2.5, 10.0) },
             notes = "ملاحظة عربية طويلة لا يجب قصها ".repeat(70)
         )
         val file = InvoiceExporter.generatePdf(context, invoice, company)
         assertTrue(file.length() > 0)
-        val artifacts = File("build/validation-artifacts").apply { mkdirs() }
+        val artifacts = File(context.filesDir, "validation-artifacts").apply { mkdirs() }
         file.copyTo(File(artifacts, "sample-arabic-invoice.pdf"), overwrite = true)
         val renderer = PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY))
         renderer.use {
@@ -60,3 +56,12 @@ class InvoicePdfTest {
         }
     }
 }
+
+// Synthetic fixture only; the test never opens the invoice repository.
+private fun pdfSampleInvoice() = Invoice(
+    id = "PDF-TEST", invoiceNumber = "TEST-001",
+    clientName = "عميل تجريبي", clientCompany = "شركة اختبار", clientPhone = "",
+    clientEmail = "", clientVatNumber = "", clientAddress = "عنوان اختبار",
+    issueDate = "2026-10-01", dueDate = "2026-10-31", projectCategory = "اختبار",
+    items = listOf(InvoiceItem("i", "خدمة تجريبية", 1.0, 100.0)), status = InvoiceStatus.PENDING
+)

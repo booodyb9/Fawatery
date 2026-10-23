@@ -16,4 +16,6 @@ This change fixes the nine reviewed issues without adding a server, login or pai
 
 Automated checks cover decimal boundaries, storage recreation and rollback, numbering, drafts/issuance, balances, reminder timing/options, CSV completeness/escaping, QR encode/decode, and rendering a long Arabic PDF whose printed QR is decoded again.
 
+The PDF renderer check runs as an instrumented Android test on an API 29 emulator; JVM unit tests do not emulate the platform PDF engine.
+
 CI uploads only synthetic PDF/PNG samples under invoice-pdf-validation. No real customer records are used. On-device visual verification of mixed Arabic/English text and the external sharing apps remains recommended.

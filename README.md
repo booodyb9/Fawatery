@@ -19,6 +19,8 @@
 ```sh
 ./gradlew assembleDebug
 ./gradlew :app:testDebugUnitTest
+# مع محاكي أو جهاز Android متصل:
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.example.InvoicePdfTest
 ```
 
 Artifact: fawraty-debug-apk. الاختبارات تنتج أيضًا PDF وصورًا ببيانات اصطناعية ضمن invoice-pdf-validation.

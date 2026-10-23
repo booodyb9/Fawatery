@@ -68,6 +68,19 @@ class InvoiceExportTest {
         assertTrue(ReminderManager.evaluateReminders(listOf(invoice), today, ReminderOptions(false, false, false)).isEmpty())
     }
 
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsInvoiceWhoseTaxExceedsSupportedTotal() {
+        calculateInvoiceTotals(listOf(InvoiceItem("limit", "test", 1.0, 900000000000.0)), 0.15)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsCombinedLinesThatExceedSupportedTotal() {
+        calculateInvoiceTotals(listOf(
+            InvoiceItem("1", "test", 1.0, 600000000000.0),
+            InvoiceItem("2", "test", 1.0, 600000000000.0)
+        ), 0.0)
+    }
+
     @Test fun totalsUseTheSameRoundingAsTheInvoiceAndSupportArabicDigits() {
         val lines = listOf(InvoiceItem("1", "a", 1.0, 0.335), InvoiceItem("2", "b", 1.0, 0.335))
         val totals = calculateInvoiceTotals(lines, 0.15)

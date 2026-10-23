@@ -102,31 +102,21 @@ fun InvoiceEditorScreen(
     var showClientDropdown by remember { mutableStateOf(false) }
     var showCatalogDropdown by remember { mutableStateOf(false) }
 
-    val items = remember {
-        mutableStateListOf<InvoiceItem>().apply {
-            if (prefillProduct != null) {
-                add(
-                    InvoiceItem(
-                        id = UUID.randomUUID().toString(),
-                        description = prefillProduct!!.name,
-                        quantity = 1.0,
-                        unitPrice = prefillProduct!!.defaultPrice,
-                        unit = prefillProduct!!.unit,
-                        discount = 0.0
-                    )
-                )
-            } else {
-                add(
-                    InvoiceItem(
-                        id = UUID.randomUUID().toString(),
-                        description = "",
-                        quantity = 1.0,
-                        unitPrice = 0.0,
-                        unit = "متر مربع",
-                        discount = 0.0
-                    )
-                )
+    val initialItem = remember {
+        prefillProduct?.let { product ->
+            runCatching {
+                InvoiceItem(UUID.randomUUID().toString(), product.name, 1.0, product.defaultPrice, unit = product.unit)
+                    .also { calculateInvoiceTotals(listOf(it), company.defaultTaxRate) }
             }
+        }
+    }
+    val items = remember {
+        mutableStateListOf(initialItem?.getOrNull()
+            ?: InvoiceItem(UUID.randomUUID().toString(), "", 1.0, 0.0, unit = "متر مربع"))
+    }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        initialItem?.exceptionOrNull()?.let {
+            Toast.makeText(context, it.message ?: "قيمة المنتج تتجاوز الحد المسموح للفاتورة", Toast.LENGTH_LONG).show()
         }
     }
 
