@@ -40,11 +40,78 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Enable KVM for Android PDF validation
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Validate PDF and printed QR on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.example.InvoicePdfTest,com.example.DocumentCreationUiTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace
+            adb shell run-as com.aistudio.fawraty.invdx ls files/validation-artifacts
+            mkdir -p app/build/validation-artifacts
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/sample-arabic-invoice.pdf > app/build/validation-artifacts/sample-arabic-invoice.pdf
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/invoice-without-tax-number.pdf > app/build/validation-artifacts/invoice-without-tax-number.pdf
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/custom-logo-invoice.pdf > app/build/validation-artifacts/custom-logo-invoice.pdf
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/quotation-sample.pdf > app/build/validation-artifacts/quotation-sample.pdf
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/quotation-first-page.png > app/build/validation-artifacts/quotation-first-page.png
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/first-page.png > app/build/validation-artifacts/first-page.png
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/last-page.png > app/build/validation-artifacts/last-page.png
+
+      - name: Check exported validation files
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          root = Path("app/build/validation-artifacts")
+          for name, signature in [("sample-arabic-invoice.pdf", b"%PDF-"), ("invoice-without-tax-number.pdf", b"%PDF-"), ("custom-logo-invoice.pdf", b"%PDF-"), ("quotation-sample.pdf", b"%PDF-"), ("quotation-first-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10])), ("first-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10])), ("last-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10]))]:
+              data = (root / name).read_bytes()
+              assert data.startswith(signature) and len(data) > 1000, f"Invalid exported fixture: {name}, {len(data)} bytes"
+              print(f"Validated {name}: {len(data)} bytes")
+          # Only fixed synthetic PDF fixtures from InvoicePdfTest are shown for visual review.
+          for name in ["first-page.png", "quotation-first-page.png"]:
+              encoded = base64.b64encode((root / name).read_bytes()).decode("ascii")
+              print("PDF_VISUAL_BEGIN:" + name)
+              for offset in range(0, len(encoded), 4096):
+                  print("PDF_VISUAL_CHUNK:" + encoded[offset:offset + 4096])
+              print("PDF_VISUAL_END")
+
+          PY
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: invoice-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/androidTests/
+          if-no-files-found: ignore
+
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: fawraty-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload generated PDF validation samples
+        uses: actions/upload-artifact@v4
+        with:
+          name: invoice-pdf-validation
+          path: app/build/validation-artifacts/
+          if-no-files-found: error
           retention-days: 14
 
       - name: Create GitHub Release (On Tag)

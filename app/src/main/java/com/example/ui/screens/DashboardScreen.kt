@@ -102,8 +102,12 @@ fun DashboardScreen(
     val selectedFilter by viewModel.statusFilter.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
 
-    val automatedReminders = remember(allInvoices) {
-        ReminderManager.evaluateReminders(allInvoices)
+    val reminderOptions by viewModel.reminderOptions.collectAsState()
+    val today by androidx.compose.runtime.produceState(com.example.model.InvoiceDates.today()) {
+        while (true) { kotlinx.coroutines.delay(60_000); value = com.example.model.InvoiceDates.today() }
+    }
+    val automatedReminders = remember(allInvoices, reminderOptions, today) {
+        ReminderManager.evaluateReminders(allInvoices, options = reminderOptions)
     }
 
     var showReminderModal by remember { mutableStateOf(false) }
@@ -291,7 +295,7 @@ fun DashboardScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "تذكيرات السداد الآلية (${automatedReminders.size})",
+                                    text = "اقتراحات تذكير السداد (${automatedReminders.size})",
                                     color = TextPrimary,
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                                 )
@@ -448,7 +452,7 @@ fun DashboardScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "${stats.totalCount} فواتير معتمدة",
+                                text = "${stats.totalCount} سجلات فواتير",
                                 color = RoyalGold,
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -548,7 +552,7 @@ fun DashboardScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "ضريبة القيمة 15%",
+                                    text = "إجمالي الضريبة المسجلة",
                                     color = TextSecondary,
                                     style = MaterialTheme.typography.labelMedium
                                 )
@@ -762,7 +766,7 @@ fun DashboardScreen(
                     ) {
                         Column {
                             Text(
-                                text = "جدول التذكيرات الآلية للسداد",
+                                text = "جدول اقتراحات التذكير للسداد",
                                 color = TextPrimary,
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                             )

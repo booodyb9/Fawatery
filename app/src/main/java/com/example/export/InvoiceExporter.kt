@@ -2,416 +2,393 @@ package com.example.export
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Rect
-import android.graphics.RectF
+import android.graphics.*
 import android.graphics.pdf.PdfDocument
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextDirectionHeuristics
+import android.text.TextPaint
 import androidx.core.content.FileProvider
 import com.example.R
-import com.example.model.CompanyProfile
-import com.example.model.Invoice
+import com.example.model.*
 import java.io.File
-import java.io.FileOutputStream
-import java.io.OutputStreamWriter
-import java.nio.charset.StandardCharsets
 import java.text.NumberFormat
 import java.util.Locale
 
 object InvoiceExporter {
+    private fun money(value: Double) = NumberFormat.getNumberInstance(Locale.US).apply {
+        minimumFractionDigits = 2; maximumFractionDigits = 2
+    }.format(value)
 
-    private val numberFormat = NumberFormat.getNumberInstance(Locale.US).apply {
-        minimumFractionDigits = 2
-        maximumFractionDigits = 2
-    }
+    private fun percentage(rate: Double) = java.math.BigDecimal.valueOf(rate).multiply(java.math.BigDecimal(100))
+        .stripTrailingZeros().toPlainString() + "%"
 
-    /**
-     * Generates a luxury, high-definition A4 PDF invoice.
-     */
-    fun generatePdf(
-        context: Context,
-        invoice: Invoice,
-        company: CompanyProfile,
-        accentColorHex: Int = Color.parseColor("#D4AF37")
-    ): File {
-        val pdfDocument = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // Standard A4 points
-        val page = pdfDocument.startPage(pageInfo)
-        val canvas: Canvas = page.canvas
+    fun generatePdf(context: Context, invoice: Invoice, company: CompanyProfile,
+        accentColorHex: Int = Color.rgb(160, 124, 35)): File =
+        generateDocument(context, invoice, company, accentColorHex, false)
 
-        // Background: clean executive parchment/white with luxury slate borders
-        canvas.drawColor(Color.WHITE)
+    fun generateQuotePdf(context: Context, quote: Quote, company: CompanyProfile,
+        accentColorHex: Int = Color.rgb(160, 124, 35)): File =
+        generateDocument(context, quote.document, company, accentColorHex, true)
 
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        val darkNavy = Color.parseColor("#0B1320")
-        val slateGray = Color.parseColor("#475569")
-        val lightBorder = Color.parseColor("#E2E8F0")
-        val tableHeaderBg = Color.parseColor("#0F172A")
-        val zebraBg = Color.parseColor("#F8FAFC")
-
-        // Top decorative accent bar
-        paint.color = accentColorHex
-        canvas.drawRect(0f, 0f, 595f, 8f, paint)
-
-        // Draw Company Logo if available
+    private fun generateDocument(context: Context, invoice: Invoice, company: CompanyProfile,
+        accent: Int, isQuote: Boolean): File {
+        val seller = invoice.seller ?: company
+        val qr = if (isQuote || invoice.status == InvoiceStatus.DRAFT || seller.vatNumber.isBlank()) null
+            else InvoiceQr.bitmap(invoice.generateZatcaTlvBase64(seller.companyName, seller.vatNumber))
+        val document = PdfDocument()
+        val prefix = if (isQuote) "Quote" else "Invoice"
+        val output = File(context.cacheDir, "${prefix}_${invoice.id.replace(Regex("[^A-Za-z0-9_-]"), "_")}.pdf")
         try {
-            val options = BitmapFactory.Options().apply { inSampleSize = 2 }
-            val logoBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.fawraty_logo, options)
-            if (logoBitmap != null) {
-                val destRect = RectF(35f, 25f, 95f, 85f)
-                canvas.drawBitmap(logoBitmap, null, destRect, paint)
+            PdfInvoiceLayout(document, invoice, seller, accent, context, isQuote).use { layout ->
+                layout.draw(qr)
+                output.outputStream().use { document.writeTo(it) }
             }
-        } catch (_: Exception) {}
-
-        // Company Details (Left header area)
-        textPaint.color = darkNavy
-        textPaint.textSize = 15f
-        textPaint.isFakeBoldText = true
-        canvas.drawText(company.companyName, 105f, 42f, textPaint)
-
-        textPaint.textSize = 9f
-        textPaint.isFakeBoldText = false
-        textPaint.color = slateGray
-        canvas.drawText(company.companyNameEn, 105f, 55f, textPaint)
-        canvas.drawText("س.ت: ${company.commercialRegistration} | الرقم الضريبي: ${company.vatNumber}", 105f, 68f, textPaint)
-        canvas.drawText("${company.address} | هاتف: ${company.phone}", 105f, 80f, textPaint)
-
-        // Tax Invoice Title Box (Right header area)
-        paint.color = Color.parseColor("#F1F5F9")
-        canvas.drawRoundRect(RectF(395f, 25f, 560f, 85f), 6f, 6f, paint)
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 1f
-        paint.color = accentColorHex
-        canvas.drawRoundRect(RectF(395f, 25f, 560f, 85f), 6f, 6f, paint)
-        paint.style = Paint.Style.FILL
-
-        textPaint.color = darkNavy
-        textPaint.textSize = 13f
-        textPaint.isFakeBoldText = true
-        textPaint.textAlign = Paint.Align.CENTER
-        canvas.drawText("فاتورة ضريبية معتمدة", 477f, 45f, textPaint)
-
-        textPaint.textSize = 8.5f
-        textPaint.color = slateGray
-        textPaint.isFakeBoldText = false
-        canvas.drawText("فاتورة ضريبية - معتمدة ومطابقة", 477f, 58f, textPaint)
-
-        textPaint.color = darkNavy
-        textPaint.isFakeBoldText = true
-        canvas.drawText(invoice.invoiceNumber, 477f, 74f, textPaint)
-        textPaint.textAlign = Paint.Align.LEFT
-
-        // Divider
-        paint.color = lightBorder
-        paint.strokeWidth = 1f
-        canvas.drawLine(35f, 98f, 560f, 98f, paint)
-
-        // Invoice Meta & Client Cards (Two Columns)
-        // Left Box: Buyer / Client Info
-        val cardWidth = 240f
-        paint.color = Color.parseColor("#FAFAFA")
-        canvas.drawRoundRect(RectF(35f, 108f, 35f + cardWidth, 195f), 6f, 6f, paint)
-        paint.style = Paint.Style.STROKE
-        paint.color = lightBorder
-        canvas.drawRoundRect(RectF(35f, 108f, 35f + cardWidth, 195f), 6f, 6f, paint)
-        paint.style = Paint.Style.FILL
-
-        textPaint.color = accentColorHex
-        textPaint.textSize = 10f
-        textPaint.isFakeBoldText = true
-        canvas.drawText("بيانات العميل (المشتري):", 45f, 124f, textPaint)
-
-        textPaint.color = darkNavy
-        textPaint.textSize = 11f
-        textPaint.isFakeBoldText = true
-        canvas.drawText(invoice.clientCompany.ifEmpty { invoice.clientName }, 45f, 140f, textPaint)
-
-        textPaint.textSize = 9f
-        textPaint.isFakeBoldText = false
-        textPaint.color = slateGray
-        canvas.drawText("المسؤول: ${invoice.clientName}", 45f, 153f, textPaint)
-        canvas.drawText("الرقم الضريبي: ${invoice.clientVatNumber}", 45f, 166f, textPaint)
-        canvas.drawText("العنوان: ${invoice.clientAddress} | ${invoice.clientPhone}", 45f, 179f, textPaint)
-
-        // Right Box: Dates & Project Type
-        val rightX = 320f
-        paint.color = Color.parseColor("#FAFAFA")
-        canvas.drawRoundRect(RectF(rightX, 108f, 560f, 195f), 6f, 6f, paint)
-        paint.style = Paint.Style.STROKE
-        paint.color = lightBorder
-        canvas.drawRoundRect(RectF(rightX, 108f, 560f, 195f), 6f, 6f, paint)
-        paint.style = Paint.Style.FILL
-
-        textPaint.color = accentColorHex
-        textPaint.textSize = 10f
-        textPaint.isFakeBoldText = true
-        canvas.drawText("تفاصيل الفاتورة والمشروع:", rightX + 10f, 124f, textPaint)
-
-        textPaint.color = darkNavy
-        textPaint.textSize = 9.5f
-        textPaint.isFakeBoldText = false
-        canvas.drawText("تاريخ الإصدار: ${invoice.issueDate}", rightX + 10f, 142f, textPaint)
-        canvas.drawText("تاريخ الاستحقاق: ${invoice.dueDate}", rightX + 10f, 156f, textPaint)
-        canvas.drawText("تصنيف المشروع: ${invoice.projectCategory}", rightX + 10f, 170f, textPaint)
-        canvas.drawText("حالة السداد: ${invoice.status.labelAr} (${invoice.status.labelEn})", rightX + 10f, 184f, textPaint)
-
-        // Table Header
-        val tableTop = 210f
-        paint.color = tableHeaderBg
-        canvas.drawRoundRect(RectF(35f, tableTop, 560f, tableTop + 24f), 4f, 4f, paint)
-
-        textPaint.color = Color.WHITE
-        textPaint.textSize = 9.5f
-        textPaint.isFakeBoldText = true
-        canvas.drawText("#", 45f, tableTop + 16f, textPaint)
-        canvas.drawText("بيان الصنف / الخدمة المعمارية", 70f, tableTop + 16f, textPaint)
-        canvas.drawText("الكمية", 320f, tableTop + 16f, textPaint)
-        canvas.drawText("الوحدة", 365f, tableTop + 16f, textPaint)
-        canvas.drawText("سعر الوحدة", 420f, tableTop + 16f, textPaint)
-        canvas.drawText("الخصم", 485f, tableTop + 16f, textPaint)
-        canvas.drawText("الإجمالي", 525f, tableTop + 16f, textPaint)
-
-        // Table Rows
-        var currentY = tableTop + 24f
-        textPaint.isFakeBoldText = false
-        textPaint.textSize = 9f
-
-        invoice.items.forEachIndexed { index, item ->
-            val rowHeight = 24f
-            if (index % 2 == 1) {
-                paint.color = zebraBg
-                canvas.drawRect(35f, currentY, 560f, currentY + rowHeight, paint)
-            }
-            paint.color = lightBorder
-            paint.strokeWidth = 0.5f
-            canvas.drawLine(35f, currentY + rowHeight, 560f, currentY + rowHeight, paint)
-
-            textPaint.color = darkNavy
-            canvas.drawText("${index + 1}", 45f, currentY + 16f, textPaint)
-
-            val shortDesc = if (item.description.length > 44) item.description.take(42) + ".." else item.description
-            canvas.drawText(shortDesc, 70f, currentY + 16f, textPaint)
-
-            canvas.drawText("${item.quantity}", 320f, currentY + 16f, textPaint)
-            canvas.drawText(item.unit, 365f, currentY + 16f, textPaint)
-            canvas.drawText(numberFormat.format(item.unitPrice), 420f, currentY + 16f, textPaint)
-            canvas.drawText(numberFormat.format(item.discount), 485f, currentY + 16f, textPaint)
-
-            textPaint.isFakeBoldText = true
-            canvas.drawText(numberFormat.format(item.totalWithoutVat), 525f, currentY + 16f, textPaint)
-            textPaint.isFakeBoldText = false
-
-            currentY += rowHeight
+        } catch (error: Exception) {
+            output.delete()
+            throw error
+        } finally {
+            document.close()
+            qr?.recycle()
         }
+        check(output.length() > 0) { "لم يتم إنشاء ملف PDF" }
+        return output
+    }
 
-        // Totals & Bank Summary Section
-        val totalsTop = currentY + 16f
+    fun generateCsv(context: Context, invoice: Invoice, company: CompanyProfile): File =
+        generateCsv(context, listOf(invoice), company)
 
-        // Left box: Bank info & Notes
-        paint.color = Color.parseColor("#F8FAFC")
-        canvas.drawRoundRect(RectF(35f, totalsTop, 320f, totalsTop + 115f), 6f, 6f, paint)
-        paint.style = Paint.Style.STROKE
-        paint.color = lightBorder
-        canvas.drawRoundRect(RectF(35f, totalsTop, 320f, totalsTop + 115f), 6f, 6f, paint)
-        paint.style = Paint.Style.FILL
-
-        textPaint.color = accentColorHex
-        textPaint.isFakeBoldText = true
-        textPaint.textSize = 9.5f
-        canvas.drawText("معلومات السداد والحساب البنكي:", 45f, totalsTop + 18f, textPaint)
-
-        textPaint.color = darkNavy
-        textPaint.isFakeBoldText = false
-        textPaint.textSize = 8.5f
-        canvas.drawText("البنك: ${company.bankName}", 45f, totalsTop + 33f, textPaint)
-        canvas.drawText("رقم الآيبان IBAN: ${company.iban}", 45f, totalsTop + 47f, textPaint)
-        canvas.drawText("الشروط: ${invoice.paymentTerms.take(55)}", 45f, totalsTop + 62f, textPaint)
-        canvas.drawText("الملاحظات: ${invoice.notes.take(55)}", 45f, totalsTop + 76f, textPaint)
-        textPaint.color = slateGray
-        canvas.drawText("خاضعة لكود البناء السعودي واشتراطات هيئة الزكاة والضريبة والجمارك.", 45f, totalsTop + 95f, textPaint)
-
-        // Right box: Calculation breakdown (Subtotal, VAT 15%, Grand Total)
-        val calcLeft = 340f
-        paint.color = Color.parseColor("#0F172A")
-        canvas.drawRoundRect(RectF(calcLeft, totalsTop, 560f, totalsTop + 115f), 6f, 6f, paint)
-
-        textPaint.color = Color.parseColor("#94A3B8")
-        textPaint.textSize = 9.5f
-        canvas.drawText("المجموع قبل الضريبة:", calcLeft + 12f, totalsTop + 22f, textPaint)
-        textPaint.color = Color.WHITE
-        textPaint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("${numberFormat.format(invoice.subtotal)} ${company.currencyAr}", 545f, totalsTop + 22f, textPaint)
-
-        textPaint.color = Color.parseColor("#94A3B8")
-        textPaint.textAlign = Paint.Align.LEFT
-        canvas.drawText("ضريبة القيمة المضافة (15%):", calcLeft + 12f, totalsTop + 45f, textPaint)
-        textPaint.color = Color.WHITE
-        textPaint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("${numberFormat.format(invoice.vatAmount)} ${company.currencyAr}", 545f, totalsTop + 45f, textPaint)
-
-        paint.color = accentColorHex
-        canvas.drawLine(calcLeft + 12f, totalsTop + 60f, 548f, totalsTop + 60f, paint)
-
-        textPaint.color = accentColorHex
-        textPaint.isFakeBoldText = true
-        textPaint.textSize = 11.5f
-        textPaint.textAlign = Paint.Align.LEFT
-        canvas.drawText("المبلغ الإجمالي المستحق:", calcLeft + 12f, totalsTop + 85f, textPaint)
-
-        textPaint.textSize = 13f
-        textPaint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("${numberFormat.format(invoice.grandTotal)} ${company.currencyAr}", 545f, totalsTop + 85f, textPaint)
-        textPaint.textAlign = Paint.Align.LEFT
-
-        // Signature & Stamp Section at Bottom
-        val bottomY = 740f
-        paint.color = lightBorder
-        canvas.drawLine(35f, bottomY, 560f, bottomY, paint)
-
-        textPaint.color = slateGray
-        textPaint.textSize = 8.5f
-        canvas.drawText("الختم المعتمد لشركة زجاج الرياض", 65f, bottomY + 25f, textPaint)
-        canvas.drawText("التوقيع المعتمد للإدارة المالية", 400f, bottomY + 25f, textPaint)
-
-        paint.style = Paint.Style.STROKE
-        paint.color = Color.parseColor("#CBD5E1")
-        canvas.drawRoundRect(RectF(60f, bottomY + 32f, 180f, bottomY + 75f), 4f, 4f, paint)
-        canvas.drawRoundRect(RectF(380f, bottomY + 32f, 510f, bottomY + 75f), 4f, 4f, paint)
-        paint.style = Paint.Style.FILL
-
-        // Stamp text inside box
-        textPaint.color = accentColorHex
-        textPaint.textSize = 8f
-        textPaint.isFakeBoldText = true
-        textPaint.textAlign = Paint.Align.CENTER
-        canvas.drawText("شركة زجاج الرياض", 120f, bottomY + 52f, textPaint)
-        canvas.drawText("معتمد ومطابق للأنظمة", 120f, bottomY + 64f, textPaint)
-        textPaint.textAlign = Paint.Align.LEFT
-
-        pdfDocument.finishPage(page)
-
-        val file = File(context.cacheDir, "Invoice_${invoice.invoiceNumber}.pdf")
-        val outputStream = FileOutputStream(file)
-        pdfDocument.writeTo(outputStream)
-        outputStream.close()
-        pdfDocument.close()
-
+    /** One row per line item; invoice totals are carried only on its first row to avoid double-counting. */
+    fun generateCsv(context: Context, invoices: List<Invoice>, company: CompanyProfile): File {
+        val file = File(context.cacheDir, "Invoices_${java.util.UUID.randomUUID()}.csv")
+        file.outputStream().bufferedWriter(Charsets.UTF_8).use { writer ->
+            writer.write("\uFEFF")
+            writer.write(listOf("رقم الفاتورة", "تاريخ الإصدار", "تاريخ الاستحقاق", "الحالة", "اسم العميل", "المنشأة", "الهاتف", "رقم العميل الضريبي", "المشروع", "البند", "الكمية", "الوحدة", "السعر", "الخصم", "إجمالي البند", "المجموع قبل الضريبة", "معدل الضريبة", "الضريبة", "الإجمالي", "البنك", "الآيبان").joinToString(",") { csvText(it) })
+            writer.write("\r\n")
+            invoices.forEach { invoice ->
+                val seller = invoice.seller ?: company
+                invoice.items.forEachIndexed { index, item ->
+                    val text = listOf(invoice.invoiceNumber, invoice.issueDate, invoice.dueDate, invoice.status.labelAr,
+                        invoice.clientName, invoice.clientCompany, invoice.clientPhone, invoice.clientVatNumber,
+                        invoice.projectCategory, item.description)
+                    val row = text.map { csvText(it) } + listOf(
+                        item.quantity.toString(), csvText(item.unit), decimal(item.unitPrice), decimal(item.discount),
+                        decimal(item.totalWithoutVat),
+                        if (index == 0) decimal(invoice.subtotal) else "",
+                        decimal(invoice.taxRate),
+                        if (index == 0) decimal(invoice.vatAmount) else "",
+                        if (index == 0) decimal(invoice.grandTotal) else "",
+                        csvText(seller.bankName), csvText(seller.iban)
+                    )
+                    writer.write(row.joinToString(","))
+                    writer.write("\r\n")
+                }
+            }
+        }
         return file
     }
 
-    /**
-     * Generates a clean, UTF-8 encoded CSV file with BOM for Microsoft Excel / Accounting.
-     */
-    fun generateCsv(context: Context, invoice: Invoice, company: CompanyProfile): File {
-        val file = File(context.cacheDir, "Invoice_${invoice.invoiceNumber}.csv")
-        val writer = OutputStreamWriter(FileOutputStream(file), StandardCharsets.UTF_8)
+    private fun decimal(number: Double) = java.math.BigDecimal.valueOf(number).toPlainString()
 
-        // UTF-8 BOM for Excel Arabic character compatibility
-        writer.write("\uFEFF")
-
-        // CSV Header
-        writer.write("رقم الفاتورة,تاريخ الإصدار,تاريخ الاستحقاق,حالة الفاتورة,اسم العميل,اسم المنشأة,هاتف العميل,الرقم الضريبي للعميل,تصنيف المشروع,بيان الصنف,الكمية,الوحدة,سعر الوحدة,الخصم,إجمالي الصنف,المجموع قبل الضريبة,الضريبة 15%,المبلغ الإجمالي,البنك,الآيبان\n")
-
-        // For each item write a row
-        invoice.items.forEach { item ->
-            val row = buildString {
-                append("\"${invoice.invoiceNumber}\",")
-                append("\"${invoice.issueDate}\",")
-                append("\"${invoice.dueDate}\",")
-                append("\"${invoice.status.labelAr}\",")
-                append("\"${invoice.clientName.replace("\"", "\"\"")}\",")
-                append("\"${invoice.clientCompany.replace("\"", "\"\"")}\",")
-                append("\"${invoice.clientPhone}\",")
-                append("\"${invoice.clientVatNumber}\",")
-                append("\"${invoice.projectCategory}\",")
-                append("\"${item.description.replace("\"", "\"\"")}\",")
-                append("${item.quantity},")
-                append("\"${item.unit}\",")
-                append("${item.unitPrice},")
-                append("${item.discount},")
-                append("${item.totalWithoutVat},")
-                append("${invoice.subtotal},")
-                append("${invoice.vatAmount},")
-                append("${invoice.grandTotal},")
-                append("\"${company.bankName}\",")
-                append("\"${company.iban}\"\n")
-            }
-            writer.write(row)
-        }
-
-        writer.flush()
-        writer.close()
-        return file
+    /** Excel also executes formulas in quoted CSV cells, so escape leading formula markers. */
+    private fun csvText(value: String): String {
+        val safe = if (value.trimStart().firstOrNull() in listOf('=', '+', '-', '@') ||
+            value.firstOrNull() in listOf('\t', '\r', '\n')) "'" + value else value
+        return "\"" + safe.replace("\"", "\"\"") + "\""
     }
 
-    /**
-     * Shares a file via Android Intent with FileProvider.
-     */
     fun shareFile(context: Context, file: File, mimeType: String, title: String) {
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.provider",
-            file
-        )
-
+        check(file.isFile && file.length() > 0) { "ملف التصدير غير متاح" }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, title)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-
-        val chooser = Intent.createChooser(intent, title).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(chooser)
+        context.startActivity(Intent.createChooser(intent, title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    /**
-     * Creates a formal Arabic WhatsApp / SMS reminder template.
-     */
-    fun createReminderMessage(
-        invoice: Invoice,
-        company: CompanyProfile,
-        reminderType: ReminderType
-    ): String {
-        val typeGreeting = when (reminderType) {
-            ReminderType.THREE_DAYS_BEFORE -> "تذكير بموعد الاستحقاق القادم (خلال 3 أيام)"
-            ReminderType.ON_DUE_DATE -> "تذكير بموعد الاستحقاق اليوم"
-            ReminderType.OVERDUE -> "إشعار تأخر سداد الفاتورة المستحقة"
+    fun createReminderMessage(invoice: Invoice, company: CompanyProfile, reminderType: ReminderType): String {
+        val seller = invoice.seller ?: company
+        val title = when (reminderType) {
+            ReminderType.THREE_DAYS_BEFORE -> "تذكير باقتراب الاستحقاق"
+            ReminderType.ON_DUE_DATE -> "تذكير باستحقاق اليوم"
+            ReminderType.OVERDUE -> "تذكير بتأخر السداد"
         }
-
         return """
-السلام عليكم ورحمة الله وبركاته،
-عزيزنا العميل: ${invoice.clientName} (${invoice.clientCompany})
-
-نحيطكم علماً بأنه قد تم إصدار $typeGreeting للفاتورة الضريبية رقم:
-*${invoice.invoiceNumber}*
-
-📌 تفاصيل الفاتورة:
-• المشروع: ${invoice.projectCategory}
-• تاريخ الإصدار: ${invoice.issueDate}
-• تاريخ الاستحقاق: ${invoice.dueDate}
-• المبلغ الإجمالي المستحق: ${numberFormat.format(invoice.grandTotal)} ${company.currencyAr} (شامل ضريبة القيمة المضافة 15%)
-
-🏦 بيانات التحويل البنكي:
-• البنك: ${company.bankName}
-• الحساب باسم: ${company.companyName}
-• الآيبان (IBAN): ${company.iban}
-
-شاكرين لكم حسن تعاونكم الدائم وثقتكم بشركة زجاج الرياض.
-للتواصل أو الاستفسار: ${company.phone} | ${company.email}
+$title
+عزيزنا العميل: ${invoice.clientName}
+الفاتورة: ${invoice.invoiceNumber}
+تاريخ الاستحقاق: ${invoice.dueDate}
+المبلغ: ${money(invoice.grandTotal)} ${seller.currencyAr} (الضريبة ${percentage(invoice.taxRate)})
+البنك: ${invoice.bankName}
+الآيبان: ${invoice.iban}
+${seller.companyName}
+${seller.phone}
 """.trimIndent()
     }
 }
 
+private class PdfInvoiceLayout(
+    private val document: PdfDocument,
+    private val invoice: Invoice,
+    private val company: CompanyProfile,
+    private val accent: Int,
+    private val context: Context,
+    private val isQuote: Boolean = false
+) : java.io.Closeable {
+    // At 60 PDF points, 256 pixels gives about 300 dpi without embedding the source photograph.
+    private val logo = com.example.branding.CompanyLogoStore.load(context, company.logoFileName)
+    override fun close() { logo.recycle() }
+
+    private var page: PdfDocument.Page? = null
+    private lateinit var canvas: Canvas
+    private var pageNumber = 0
+    private var y = 0f
+    private var contentTop = 0f
+    private val margin = 36f
+    private val bodyWidth = 523f
+    private val bottom = 774f
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    private fun layout(text: String, width: Float, size: Float = 10f, bold: Boolean = false): StaticLayout {
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(15, 23, 42)
+            textSize = size
+            typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
+        }
+        val builder = StaticLayout.Builder.obtain(text, 0, text.length, textPaint, width.toInt())
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_RTL)
+            .setIncludePad(true).setLineSpacing(4f, 1f)
+        if (android.os.Build.VERSION.SDK_INT >= 28) builder.setUseLineSpacingFromFallbacks(true)
+        return builder.build()
+    }
+
+    private fun drawLayout(block: StaticLayout, x: Float, top: Float) {
+        canvas.save()
+        canvas.translate(x, top)
+        block.draw(canvas)
+        canvas.restore()
+    }
+
+    private fun finishPage() {
+        val active = page ?: return
+        drawLayout(layout("صفحة $pageNumber — ${invoice.invoiceNumber}", bodyWidth, 8f), margin, 803f)
+        document.finishPage(active)
+        page = null
+    }
+
+    private fun newPage() {
+        finishPage()
+        pageNumber++
+        page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+        canvas = page!!.canvas
+        canvas.drawColor(Color.WHITE)
+        paint.color = accent
+        canvas.drawRect(0f, 0f, 595f, 6f, paint)
+        val heading = layout(company.companyName.lineSequence().filter { it.isNotBlank() }.joinToString(" "), bodyWidth - 75f, 14f, true)
+        drawLayout(heading, margin, 24f)
+        val title = layout(when {
+            isQuote -> "عرض سعر — ${invoice.invoiceNumber}"
+            invoice.status == InvoiceStatus.DRAFT -> "مسودة — ${invoice.invoiceNumber}"
+            else -> "فاتورة — ${invoice.invoiceNumber}"
+        }, bodyWidth - 75f, 11f, true)
+        drawLayout(title, margin, 30f + heading.height)
+        run {
+            val scale = minOf(60f / logo.width, 60f / logo.height)
+            canvas.drawBitmap(logo, null, RectF(499f, 22f, 499f + logo.width * scale, 22f + logo.height * scale), paint)
+        }
+        y = maxOf(96f, 36f + heading.height + title.height)
+        contentTop = y
+        check(y < bottom - 40f) { "اسم المنشأة أطول من المساحة المتاحة" }
+        paint.color = Color.LTGRAY
+        canvas.drawLine(margin, y - 8, margin + bodyWidth, y - 8, paint)
+    }
+
+    private fun ensureSpace(height: Float) {
+        if (y + height > bottom) newPage()
+    }
+
+    /** Paginate by layout line boundaries, preserving Arabic shaping and every character. */
+    private fun block(text: String, size: Float = 10f, bold: Boolean = false) {
+        if (text.isBlank()) return
+        val block = layout(text, bodyWidth, size, bold)
+        var firstLine = 0
+        while (firstLine < block.lineCount) {
+            val lineHeight = block.getLineBottom(firstLine) - block.getLineTop(firstLine)
+            ensureSpace(lineHeight.toFloat())
+            var lastLine = firstLine
+            while (lastLine + 1 < block.lineCount &&
+                block.getLineBottom(lastLine + 1) - block.getLineTop(firstLine) <= bottom - y) lastLine++
+            val height = block.getLineBottom(lastLine) - block.getLineTop(firstLine)
+            canvas.save()
+            canvas.clipRect(margin, y, margin + bodyWidth, y + height)
+            drawLayout(block, margin, y - block.getLineTop(firstLine))
+            canvas.restore()
+            y += height
+            firstLine = lastLine + 1
+        }
+        y += 8f
+    }
+
+
+    private val columnWidths = listOf(100f, 80f, 80f, 60f, 177f, 26f)
+    private fun tableHeader(): Float {
+        val labels = listOf("الإجمالي", "الخصم", "سعر الوحدة", "الكمية / الوحدة", "الوصف", "م")
+        val blocks = labels.mapIndexed { index, label -> layout(label, columnWidths[index] - 12f, 9f, true) }
+        val height = blocks.maxOf { it.height }.toFloat() + 14f
+        paint.color = Color.rgb(235, 240, 244)
+        canvas.drawRect(margin, y, margin + bodyWidth, y + height, paint)
+        var x = margin
+        blocks.forEachIndexed { index, block ->
+            drawLayout(block, x + 6f, y + 7f)
+            x += columnWidths[index]
+        }
+        y += height
+        return height
+    }
+
+    /** Wrap every cell and repeat the header. Even a row taller than a page is split by whole lines. */
+    private fun itemTable() {
+        ensureSpace(90f)
+        var headerHeight = tableHeader()
+        invoice.items.forEachIndexed { index, item ->
+            val quantity = java.math.BigDecimal.valueOf(item.quantity).stripTrailingZeros().toPlainString()
+            val values = listOf(format(item.totalWithoutVat), formatInvoiceRate(item.discount), formatInvoiceRate(item.unitPrice),
+                quantity + "\n" + item.unit, item.description, (index + 1).toString())
+            val blocks = values.mapIndexed { column, value ->
+                layout(value, columnWidths[column] - 12f, if (column == 4) 10f else 9f)
+            }
+            val rowHeight = blocks.maxOf { it.height }.toFloat() + 12f
+            if (rowHeight <= bottom - contentTop - headerHeight && y + rowHeight > bottom) {
+                newPage()
+                headerHeight = tableHeader()
+            }
+            val lines = IntArray(blocks.size)
+            while (blocks.indices.any { lines[it] < blocks[it].lineCount }) {
+                val minimum = blocks.indices.filter { lines[it] < blocks[it].lineCount }
+                    .maxOf { blocks[it].getLineBottom(lines[it]) - blocks[it].getLineTop(lines[it]) }.toFloat() + 12f
+                if (y + minimum > bottom) {
+                    newPage()
+                    headerHeight = tableHeader()
+                }
+                val available = bottom - y - 12f
+                val ends = IntArray(blocks.size) { lines[it] - 1 }
+                var drawnHeight = 0f
+                blocks.forEachIndexed { column, block ->
+                    val first = lines[column]
+                    if (first < block.lineCount) {
+                        var last = first
+                        while (last + 1 < block.lineCount &&
+                            block.getLineBottom(last + 1) - block.getLineTop(first) <= available) last++
+                        ends[column] = last
+                        drawnHeight = maxOf(drawnHeight, (block.getLineBottom(last) - block.getLineTop(first)).toFloat())
+                    }
+                }
+                paint.color = if (index % 2 == 0) Color.WHITE else Color.rgb(248, 250, 252)
+                canvas.drawRect(margin, y, margin + bodyWidth, y + drawnHeight + 12f, paint)
+                var x = margin
+                blocks.forEachIndexed { column, block ->
+                    if (lines[column] < block.lineCount) {
+                        canvas.save()
+                        canvas.clipRect(x + 6f, y + 6f, x + columnWidths[column] - 6f, y + 6f + drawnHeight)
+                        drawLayout(block, x + 6f, y + 6f - block.getLineTop(lines[column]))
+                        canvas.restore()
+                        lines[column] = ends[column] + 1
+                    }
+                    x += columnWidths[column]
+                }
+                y += drawnHeight + 12f
+                paint.color = Color.rgb(223, 230, 237)
+                canvas.drawLine(margin, y, margin + bodyWidth, y, paint)
+            }
+        }
+        y += 16f
+    }
+
+    private fun totalsSection() {
+        ensureSpace(110f)
+        fun row(label: String, amount: Double, emphasized: Boolean = false) {
+            val height = if (emphasized) 40f else 28f
+            if (emphasized) {
+                paint.color = Color.rgb(237, 243, 246)
+                canvas.drawRoundRect(RectF(margin, y, margin + bodyWidth, y + height), 6f, 6f, paint)
+            }
+            val size = if (emphasized) 13f else 10f
+            drawLayout(layout(label, 220f, size, emphasized), margin + bodyWidth - 232f, y + 7f)
+            drawLayout(layout(format(amount) + " " + company.currencyAr, bodyWidth - 256f, size, emphasized),
+                margin + 12f, y + 7f)
+            y += height
+        }
+        row("المجموع قبل الضريبة", invoice.subtotal)
+        val rate = java.math.BigDecimal.valueOf(invoice.taxRate).multiply(java.math.BigDecimal(100)).stripTrailingZeros().toPlainString()
+        row("ضريبة القيمة المضافة ($rate%)", invoice.vatAmount)
+        row("الإجمالي", invoice.grandTotal, true)
+        y += 14f
+    }
+
+    fun draw(qr: Bitmap?) {
+        newPage()
+        block("بيانات المنشأة", bold = true)
+        if (company.vatNumber.isNotBlank()) block("الرقم الضريبي: ${company.vatNumber}")
+        if (company.commercialRegistration.isNotBlank()) block("السجل التجاري: ${company.commercialRegistration}")
+        block(listOfNotNull(
+            company.address.takeIf { it.isNotBlank() }?.let { "العنوان: $it" },
+            company.phone.takeIf { it.isNotBlank() }?.let { "الهاتف: $it" }
+        ).joinToString(" | "))
+        val buyerCompany = invoice.clientCompany.takeIf { it.isNotBlank() && it != invoice.clientName }
+        block("العميل: " + invoice.clientName + (buyerCompany?.let { " | $it" } ?: ""), bold = true)
+        if (invoice.clientVatNumber.isNotBlank()) block("رقم العميل الضريبي: ${invoice.clientVatNumber}")
+        block(listOfNotNull(
+            invoice.clientAddress.takeIf { it.isNotBlank() }?.let { "العنوان: $it" },
+            invoice.clientPhone.takeIf { it.isNotBlank() }?.let { "الهاتف: $it" },
+            invoice.clientEmail.takeIf { it.isNotBlank() }?.let { "البريد: $it" }
+        ).joinToString(" | "))
+        block(if (isQuote) "تاريخ العرض: ${invoice.issueDate} | صالح حتى: ${invoice.dueDate}" else "تاريخ الفاتورة: ${invoice.issueDate} | الاستحقاق: ${invoice.dueDate}")
+        if (invoice.issuedAt.isNotBlank()) block((if (isQuote) "وقت إنشاء العرض (UTC): " else "وقت الإصدار الفعلي (UTC): ") + invoice.issuedAt)
+        block(if (isQuote) "المشروع: ${invoice.projectCategory} | عرض أسعار" else "المشروع: ${invoice.projectCategory} | الحالة: ${invoice.status.labelAr}")
+        block("البنود (${company.currencyAr})", 12f, true)
+        itemTable()
+        totalsSection()
+        block(listOfNotNull(
+            invoice.bankName.takeIf { it.isNotBlank() }?.let { "البنك: $it" },
+            invoice.iban.takeIf { it.isNotBlank() }?.let { "الآيبان: $it" }
+        ).joinToString(" | "))
+        if (invoice.paymentTerms.isNotBlank()) {
+            block("شروط السداد", bold = true)
+            block(invoice.paymentTerms)
+        }
+        if (invoice.notes.isNotBlank()) {
+            block("الملاحظات", bold = true)
+            block(invoice.notes)
+        }
+        if (qr != null) {
+            ensureSpace(160f)
+            canvas.drawBitmap(qr, null, RectF(margin + bodyWidth - 135, y, margin + bodyWidth, y + 135), paint)
+            drawLayout(layout("QR بيانات الفاتورة", bodyWidth - 150, 10f), margin, y + 30)
+            y += 150
+        }
+        if (isQuote) {
+            val explanation = layout("عرض سعر للتقييم والموافقة، ويُحوّل إلى فاتورة عند الاعتماد.", bodyWidth - 24f, 9f)
+            val height = explanation.height + 24f
+            y += 12f
+            ensureSpace(height)
+            paint.color = Color.rgb(242, 245, 248)
+            canvas.drawRoundRect(RectF(margin, y, margin + bodyWidth, y + height), 5f, 5f, paint)
+            drawLayout(explanation, margin + 12f, y + 12f)
+            y += height
+        }
+        // Technical data encoding is not a clearance/certification claim.
+        finishPage()
+    }
+
+    private fun format(value: Double) = String.format(Locale.US, "%.2f", value)
+}
+
 enum class ReminderType(val titleAr: String, val subtitleAr: String) {
-    THREE_DAYS_BEFORE("تذكير قبل 3 أيام", "إشعار استباقي قبل موعد الاستحقاق بـ 3 أيام"),
-    ON_DUE_DATE("تذكير يوم الاستحقاق", "إشعار في نفس يوم الاستحقاق المالي"),
-    OVERDUE("تنبيه متأخرة الدفع", "متابعة فورية للمستحقات المتأخرة")
+    THREE_DAYS_BEFORE("قبل الاستحقاق", "تذكير يدوي خلال الأيام الثلاثة السابقة للاستحقاق"),
+    ON_DUE_DATE("يوم الاستحقاق", "تذكير يدوي في يوم الاستحقاق"),
+    OVERDUE("متأخرة الدفع", "متابعة يدوية للمستحقات المتأخرة")
 }

@@ -30,6 +30,9 @@ import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Business
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.Description
+import com.example.ui.screens.QuotesScreen
+import com.example.ui.screens.QuoteDetailScreen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -72,9 +75,27 @@ import com.example.viewmodel.SubScreen
 fun FawratyApp(
     viewModel: FawratyViewModel = viewModel()
 ) {
+    val error by viewModel.lastError.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(error) {
+        error?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.clearError()
+        }
+    }
+    val storageError by viewModel.storageError.collectAsState()
+    if (storageError != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {},
+            title = { Text("تعذر فتح البيانات") },
+            text = { Text(storageError ?: "") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { (context as? android.app.Activity)?.finish() }) { Text("إغلاق بأمان") } }
+        )
+    }
     val currentTab by viewModel.selectedTab.collectAsState()
     val activeSubScreen by viewModel.activeSubScreen.collectAsState()
     val selectedInvoice by viewModel.selectedInvoice.collectAsState()
+    val selectedQuote by viewModel.selectedQuote.collectAsState()
 
     // Handle back button
     BackHandler(enabled = activeSubScreen != SubScreen.NONE || currentTab != NavigationTab.DASHBOARD) {
@@ -117,6 +138,13 @@ fun FawratyApp(
                         SubScreen.CREATE_INVOICE -> {
                             InvoiceEditorScreen(viewModel = viewModel)
                         }
+                        SubScreen.CREATE_QUOTE -> {
+                            InvoiceEditorScreen(viewModel = viewModel, quoteMode = true)
+                        }
+                        SubScreen.QUOTE_DETAIL -> {
+                            selectedQuote?.let { quote -> QuoteDetailScreen(quote, viewModel) }
+                                ?: QuotesScreen(viewModel)
+                        }
                         SubScreen.INVOICE_DETAIL -> {
                             selectedInvoice?.let { inv ->
                                 InvoiceDetailScreen(invoice = inv, viewModel = viewModel)
@@ -126,6 +154,7 @@ fun FawratyApp(
                             when (tab) {
                                 NavigationTab.DASHBOARD -> DashboardScreen(viewModel = viewModel)
                                 NavigationTab.INVOICES -> DashboardScreen(viewModel = viewModel)
+                                NavigationTab.QUOTES -> QuotesScreen(viewModel = viewModel)
                                 NavigationTab.CLIENTS -> ClientsScreen(viewModel = viewModel)
                                 NavigationTab.CATALOG -> CatalogScreen(viewModel = viewModel)
                                 NavigationTab.REPORTS -> ReportsScreen(viewModel = viewModel)
@@ -150,6 +179,7 @@ fun IosFrostedBottomNavigation(
 ) {
     val items = listOf(
         NavigationItem(NavigationTab.DASHBOARD, "الرئيسية", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
+        NavigationItem(NavigationTab.QUOTES, "العروض", Icons.Outlined.Description, Icons.Outlined.Description),
         NavigationItem(NavigationTab.CLIENTS, "العملاء", Icons.Filled.Group, Icons.Outlined.Group),
         NavigationItem(NavigationTab.CATALOG, "الكتالوج", Icons.Outlined.Architecture, Icons.Outlined.Architecture),
         NavigationItem(NavigationTab.REPORTS, "التقارير", Icons.Filled.Assessment, Icons.Outlined.Assessment),
@@ -198,10 +228,11 @@ fun IosFrostedBottomNavigation(
 
                     Box(
                         modifier = Modifier
+                            .weight(1f)
                             .clip(RoundedCornerShape(18.dp))
                             .background(if (isSelected) Color(0x18007AFF) else Color.Transparent)
                             .clickable { onTabSelected(item.tab) }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 2.dp, vertical = 6.dp)
                             .testTag("nav_${item.tab.name.lowercase()}"),
                         contentAlignment = Alignment.Center
                     ) {

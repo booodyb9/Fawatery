@@ -40,6 +40,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -181,143 +182,29 @@ fun ZatcaVerificationTag(
     ) {
         Icon(
             imageVector = Icons.Default.Verified,
-            contentDescription = "معتمد",
+            contentDescription = "بيانات الفاتورة",
             tint = GlassBlue,
             modifier = Modifier.size(15.dp)
         )
         Spacer(modifier = Modifier.width(5.dp))
         Text(
-            text = "معتمد ضريبياً (زكاة)",
+            text = "فواتير بالريال السعودي",
             color = GlassBlue,
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
         )
     }
 }
 
-/**
- * Geometric QR Code generator styled in iOS Ice-White with crisp dark modules
- * and sapphire blue scanline.
- */
+
+/** Standards-based QR bitmap with its full white quiet zone. */
 @Composable
-fun ZatcaQrCodeView(
-    dataString: String,
-    modifier: Modifier = Modifier,
-    sizeDp: Dp = 150.dp
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "scan")
-    val scanOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "scanline"
-    )
-
-    Box(
-        modifier = modifier
-            .size(sizeDp)
-            .shadow(4.dp, RoundedCornerShape(16.dp), ambientColor = IosShadowColor)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.2.dp, Color(0x30007AFF), RoundedCornerShape(16.dp))
-            .padding(10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(modifier = Modifier.size(sizeDp - 20.dp)) {
-            val canvasSize = size.width
-            val modules = 21 // 21x21 QR matrix
-            val moduleSize = canvasSize / modules
-
-            val primaryColor = Color(0xFF0F172A)
-            val accentColor = Color(0xFF007AFF)
-
-            // Draw Finder Patterns (Top-Left, Top-Right, Bottom-Left)
-            fun drawFinderPattern(col: Int, row: Int) {
-                val x = col * moduleSize
-                val y = row * moduleSize
-                val pSize = 7 * moduleSize
-
-                // Outer square
-                drawRoundRect(
-                    color = accentColor,
-                    topLeft = Offset(x, y),
-                    size = Size(pSize, pSize),
-                    cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
-                    style = Stroke(width = moduleSize)
-                )
-                // Inner square
-                val innerOffset = 2 * moduleSize
-                val innerSize = 3 * moduleSize
-                drawRoundRect(
-                    color = primaryColor,
-                    topLeft = Offset(x + innerOffset, y + innerOffset),
-                    size = Size(innerSize, innerSize),
-                    cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
-                )
-            }
-
-            drawFinderPattern(0, 0)
-            drawFinderPattern(modules - 7, 0)
-            drawFinderPattern(0, modules - 7)
-
-            // Timing patterns
-            for (i in 7 until modules - 7) {
-                if (i % 2 == 0) {
-                    drawRect(
-                        color = primaryColor,
-                        topLeft = Offset(6 * moduleSize, i * moduleSize),
-                        size = Size(moduleSize, moduleSize)
-                    )
-                    drawRect(
-                        color = primaryColor,
-                        topLeft = Offset(i * moduleSize, 6 * moduleSize),
-                        size = Size(moduleSize, moduleSize)
-                    )
-                }
-            }
-
-            // Pseudo-random deterministic data modules based on dataString hash
-            val hash = abs(dataString.hashCode())
-            for (r in 0 until modules) {
-                for (c in 0 until modules) {
-                    val inTL = r < 8 && c < 8
-                    val inTR = r < 8 && c >= modules - 8
-                    val inBL = r >= modules - 8 && c < 8
-                    val isTiming = r == 6 || c == 6
-
-                    if (!inTL && !inTR && !inBL && !isTiming) {
-                        val bit = ((hash xor (r * 31 + c * 17)) % 7) < 4
-                        if (bit) {
-                            val dotColor = if ((r + c) % 5 == 0) accentColor else primaryColor
-                            drawRoundRect(
-                                color = dotColor,
-                                topLeft = Offset(c * moduleSize + 0.5f, r * moduleSize + 0.5f),
-                                size = Size(moduleSize - 1f, moduleSize - 1f),
-                                cornerRadius = CornerRadius(1.2.dp.toPx(), 1.2.dp.toPx())
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Sapphire blue scan line shimmer
-            val scanY = canvasSize * scanOffset
-            drawLine(
-                brush = Brush.horizontalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        GlassBlue.copy(alpha = 0.8f),
-                        RoyalGold.copy(alpha = 0.9f),
-                        GlassBlue.copy(alpha = 0.8f),
-                        Color.Transparent
-                    )
-                ),
-                start = Offset(0f, scanY),
-                end = Offset(canvasSize, scanY),
-                strokeWidth = 2.dp.toPx()
-            )
-        }
+fun ZatcaQrCodeView(dataString: String, modifier: Modifier = Modifier, sizeDp: Dp = 150.dp) {
+    val bitmap = androidx.compose.runtime.remember(dataString) {
+        com.example.export.InvoiceQr.bitmap(dataString)
     }
+    androidx.compose.foundation.Image(
+        bitmap = bitmap.asImageBitmap(),
+        contentDescription = "QR بيانات الفاتورة",
+        modifier = modifier.size(sizeDp).background(Color.White)
+    )
 }

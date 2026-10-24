@@ -2,6 +2,8 @@ package com.example.model
 
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 enum class InvoiceStatus(val labelAr: String, val labelEn: String) {
     PAID("مدفوعة", "Paid"),
@@ -18,8 +20,19 @@ data class InvoiceItem(
     val unit: String = "متر مربع",
     val discount: Double = 0.0
 ) {
+    init {
+        require(quantity.isFinite() && quantity > 0) { "الكمية يجب أن تكون رقمًا موجبًا" }
+        require(unitPrice.isFinite() && unitPrice >= 0) { "السعر يجب أن يكون رقمًا غير سالب" }
+        require(discount.isFinite() && discount >= 0) { "الخصم يجب أن يكون رقمًا غير سالب" }
+        val gross = BigDecimal.valueOf(quantity).multiply(BigDecimal.valueOf(unitPrice))
+        require(gross <= MAX_INVOICE_AMOUNT) { "قيمة البند تتجاوز الحد المالي المدعوم" }
+        require(BigDecimal.valueOf(discount) <= gross) {
+            "الخصم أكبر من قيمة البند"
+        }
+    }
     val totalWithoutVat: Double
-        get() = ((quantity * unitPrice) - discount).coerceAtLeast(0.0)
+        get() = BigDecimal.valueOf(quantity).multiply(BigDecimal.valueOf(unitPrice))
+            .subtract(BigDecimal.valueOf(discount)).setScale(2, RoundingMode.HALF_UP).toDouble()
 }
 
 data class Invoice(
@@ -40,47 +53,50 @@ data class Invoice(
     val notes: String = "الضمان 10 سنوات على أعمال الزجاج المعماري والعزل الحراري.",
     val paymentTerms: String = "الدفعة الأولى 50% عند التعاقد، 40% عند التوريد، 10% عند التسليم النهائي.",
     val bankName: String = "مصرف الراجحي",
-    val iban: String = "SA44 8000 0456 1234 5678 9012"
+    val iban: String = "",
+    val issuedAt: String = "",
+    val seller: CompanyProfile? = null,
+    val clientId: String? = null
 ) {
-    val subtotal: Double
-        get() = items.sumOf { it.totalWithoutVat }
-
-    val vatAmount: Double
-        get() = subtotal * taxRate
-
-    val grandTotal: Double
-        get() = subtotal + vatAmount
+    init {
+        require(calculateInvoiceTotals(items, taxRate).grandTotal.isFinite())
+        require(clientName.isNotBlank()) { "يرجى إدخال اسم العميل" }
+        require(items.isNotEmpty() && items.all { it.description.isNotBlank() }) { "يرجى إدخال وصف لكل بند" }
+        require(taxRate.isFinite() && taxRate in 0.0..1.0) { "نسبة الضريبة غير صالحة" }
+        val issue = InvoiceDates.parse(issueDate)
+        val due = InvoiceDates.parse(dueDate)
+        require(issue != null && due != null && !due.before(issue)) { "راجع تاريخ الفاتورة والاستحقاق بصيغة yyyy-MM-dd" }
+        require(clientVatNumber.isBlank() || Regex("3[0-9]{13}3").matches(clientVatNumber)) { "الرقم الضريبي للعميل غير صالح" }
+    }
+    val subtotal: Double get() = calculateInvoiceTotals(items, taxRate).subtotal
+    val vatAmount: Double get() = calculateInvoiceTotals(items, taxRate).vat
+    val grandTotal: Double get() = calculateInvoiceTotals(items, taxRate).grandTotal
 
     val totalItemsCount: Int
         get() = items.size
 
-    /**
-     * Generates official ZATCA Phase 1 & 2 TLV (Tag-Length-Value) Base64 string:
-     * Tag 1: Seller's Name
-     * Tag 2: VAT Registration Number
-     * Tag 3: Time Stamp (ISO 8601)
-     * Tag 4: Invoice Total (with VAT)
-     * Tag 5: VAT Total
-     */
+    /** Five-field TLV payload. This is not ZATCA Phase 2 signing or clearance. */
     fun generateZatcaTlvBase64(sellerName: String, sellerVat: String): String {
-        return try {
-            val bos = ByteArrayOutputStream()
-            fun writeTlv(tag: Int, value: String) {
-                val bytes = value.toByteArray(StandardCharsets.UTF_8)
-                bos.write(tag)
-                bos.write(bytes.size)
-                bos.write(bytes)
-            }
-            writeTlv(1, sellerName)
-            writeTlv(2, sellerVat)
-            writeTlv(3, "${issueDate}T12:00:00Z")
-            writeTlv(4, String.format(java.util.Locale.US, "%.2f", grandTotal))
-            writeTlv(5, String.format(java.util.Locale.US, "%.2f", vatAmount))
-
-            android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP)
-        } catch (_: Exception) {
-            "ZATCA_SIMULATED_TLV_HASH_${invoiceNumber}"
+        require(sellerName.isNotBlank() && Regex("3[0-9]{13}3").matches(sellerVat)) {
+            "أكمل اسم المنشأة ورقمها الضريبي الصحيح قبل إنشاء QR"
         }
+        require(Regex("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z").matches(issuedAt)) {
+            "وقت الإصدار الفعلي غير متاح لهذه الفاتورة"
+        }
+        val bos = ByteArrayOutputStream()
+        fun writeTlv(tag: Int, value: String) {
+            val bytes = value.toByteArray(StandardCharsets.UTF_8)
+            require(bytes.size <= 255) { "بيانات QR أطول من الحد المدعوم" }
+            bos.write(tag)
+            bos.write(bytes.size)
+            bos.write(bytes)
+        }
+        writeTlv(1, sellerName)
+        writeTlv(2, sellerVat)
+        writeTlv(3, issuedAt)
+        writeTlv(4, String.format(java.util.Locale.US, "%.2f", grandTotal))
+        writeTlv(5, String.format(java.util.Locale.US, "%.2f", vatAmount))
+        return android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP)
     }
 }
 
@@ -112,15 +128,16 @@ data class CatalogProduct(
 data class CompanyProfile(
     val companyName: String = "شركة زجاج الرياض للصناعات المعمارية",
     val companyNameEn: String = "Riyadh Glass Architectural Industries Co.",
-    val commercialRegistration: String = "1010789456",
-    val vatNumber: String = "310123456700003",
+    val commercialRegistration: String = "",
+    val vatNumber: String = "",
     val address: String = "طريق الملك فهد، حي الصحافة، الرياض، المملكة العربية السعودية",
-    val phone: String = "+966 11 456 7890",
-    val email: String = "billing@riyadhglass.com.sa",
+    val phone: String = "",
+    val email: String = "",
     val website: String = "www.riyadhglass.com.sa",
     val bankName: String = "مصرف الراجحي | Al Rajhi Bank",
-    val iban: String = "SA44 8000 0456 1234 5678 9012",
+    val iban: String = "",
     val defaultTaxRate: Double = 0.15,
     val currencyAr: String = "ر.س",
-    val currencyEn: String = "SAR"
+    val currencyEn: String = "SAR",
+    val logoFileName: String? = null
 )

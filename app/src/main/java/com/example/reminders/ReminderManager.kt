@@ -25,9 +25,15 @@ data class ScheduledReminder(
     var sentAt: String? = null
 )
 
+data class ReminderOptions(
+    val threeDaysBefore: Boolean = true,
+    val onDueDate: Boolean = true,
+    val overdue: Boolean = true
+)
+
 object ReminderManager {
 
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    private val dateFormat get() = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
 
     /**
      * Scans invoices and calculates automated reminders:
@@ -37,20 +43,21 @@ object ReminderManager {
      */
     fun evaluateReminders(
         invoices: List<Invoice>,
-        todayDate: Date = dateFormat.parse("2026-10-14") ?: Date()
+        todayDate: Date = Date(),
+        options: ReminderOptions = ReminderOptions()
     ): List<ScheduledReminder> {
         val reminders = mutableListOf<ScheduledReminder>()
 
         invoices.filter { it.status != InvoiceStatus.PAID && it.status != InvoiceStatus.DRAFT }
             .forEach { invoice ->
                 try {
-                    val dueDate = dateFormat.parse(invoice.dueDate) ?: return@forEach
-                    val diffMillis = dueDate.time - todayDate.time
-                    val diffDays = TimeUnit.MILLISECONDS.toDays(diffMillis)
+                    if (com.example.model.InvoiceDates.parse(invoice.dueDate) == null) return@forEach
+                    val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(todayDate)
+                    val diffDays = com.example.model.InvoiceDates.calendarDaysBetween(today, invoice.dueDate)
 
                     when {
                         // 3 days before due date
-                        diffDays in 1..3 -> {
+                        diffDays in 1..3 && options.threeDaysBefore -> {
                             reminders.add(
                                 ScheduledReminder(
                                     id = "REM-3D-${invoice.id}",
@@ -63,7 +70,7 @@ object ReminderManager {
                             )
                         }
                         // On the due date
-                        diffDays == 0L -> {
+                        diffDays == 0L && options.onDueDate -> {
                             reminders.add(
                                 ScheduledReminder(
                                     id = "REM-TODAY-${invoice.id}",
@@ -76,7 +83,7 @@ object ReminderManager {
                             )
                         }
                         // Past due date
-                        diffDays < 0 -> {
+                        diffDays < 0 && options.overdue -> {
                             reminders.add(
                                 ScheduledReminder(
                                     id = "REM-OVERDUE-${invoice.id}",
@@ -121,7 +128,7 @@ object ReminderManager {
                 putExtra(Intent.EXTRA_TEXT, message)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(Intent.createChooser(shareIntent, "إرسال التذكير للعميل"))
+            context.startActivity(Intent.createChooser(shareIntent, "إرسال التذكير للعميل").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 
@@ -148,7 +155,7 @@ object ReminderManager {
                 putExtra(Intent.EXTRA_TEXT, message)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(Intent.createChooser(shareIntent, "إرسال التذكير عبر SMS"))
+            context.startActivity(Intent.createChooser(shareIntent, "إرسال التذكير عبر SMS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 }
