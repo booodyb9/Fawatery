@@ -2,6 +2,11 @@ package com.example.ui.screens
 
 import android.widget.Toast
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.mapSaver
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.runtime.mutableStateMapOf
 import com.example.ui.components.DocumentLogoPicker
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -94,7 +99,7 @@ fun InvoiceEditorScreen(
     var logoBusy by remember { mutableStateOf(false) }
 
 
-    val formErrors = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    val formErrors = rememberSaveable(seed?.id, saver = documentErrorsSaver) { mutableStateMapOf<String, String>() }
     var selectedClientId by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientId) }
     var clientName by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientName.orEmpty()) }
     var clientCompany by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientCompany.orEmpty()) }
@@ -120,7 +125,7 @@ fun InvoiceEditorScreen(
             }
         }
     }
-    val items = remember(seed?.id) {
+    val items = rememberSaveable(seed?.id, saver = documentItemsSaver) {
         mutableStateListOf<InvoiceItem>().apply {
             if (seed != null) addAll(seed.items)
             else add(initialItem?.getOrNull() ?: InvoiceItem(UUID.randomUUID().toString(), "", 1.0, 0.0, unit = "متر مربع"))
@@ -463,14 +468,11 @@ fun InvoiceEditorScreen(
 
         // List of Line Items with Editable Fields
         itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
-            var desc by remember(item.id) { mutableStateOf(item.description) }
-            var qtyStr by remember(item.id) { mutableStateOf(item.quantity.toString()) }
-            var priceStr by remember(item.id) { mutableStateOf(item.unitPrice.toString()) }
-            var unitStr by remember(item.id) { mutableStateOf(item.unit) }
-            var discountStr by remember(item.id) { mutableStateOf(item.discount.toString()) }
-            androidx.compose.runtime.LaunchedEffect(item.id) {
-                if (item.description.isBlank()) formErrors[item.id] = "وصف البند مطلوب"
-            }
+            var desc by rememberSaveable(item.id) { mutableStateOf(item.description) }
+            var qtyStr by rememberSaveable(item.id) { mutableStateOf(item.quantity.toString()) }
+            var priceStr by rememberSaveable(item.id) { mutableStateOf(item.unitPrice.toString()) }
+            var unitStr by rememberSaveable(item.id) { mutableStateOf(item.unit) }
+            var discountStr by rememberSaveable(item.id) { mutableStateOf(item.discount.toString()) }
 
             fun updateItem() {
                 val quantity = parseInvoiceDecimal(qtyStr)
@@ -488,6 +490,10 @@ fun InvoiceEditorScreen(
                 } catch (error: IllegalArgumentException) {
                     formErrors[item.id] = error.message ?: "قيم البند غير صالحة"
                 }
+            }
+
+            androidx.compose.runtime.LaunchedEffect(item.id, desc, qtyStr, priceStr, unitStr, discountStr) {
+                updateItem()
             }
 
             GlassCard(
@@ -548,7 +554,7 @@ fun InvoiceEditorScreen(
                                 updateItem()
                             },
                             label = { Text("الكمية") },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).testTag("document_item_quantity_$index"),
                             shape = RoundedCornerShape(8.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             colors = getTextFieldColors()
@@ -756,4 +762,24 @@ private fun getTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedLabelColor = GlassBlue,
     unfocusedLabelColor = TextSecondary,
     cursorColor = GlassBlue
+)
+
+private val documentItemsSaver = listSaver<SnapshotStateList<InvoiceItem>, Any>(
+    save = { items -> items.flatMap { listOf<Any>(it.id, it.description, it.quantity, it.unitPrice, it.unit, it.discount) } },
+    restore = { values ->
+        mutableStateListOf<InvoiceItem>().apply {
+            values.chunked(6).forEach { row ->
+                add(InvoiceItem(row[0] as String, row[1] as String,
+                    (row[2] as Number).toDouble(), (row[3] as Number).toDouble(),
+                    unit = row[4] as String, discount = (row[5] as Number).toDouble()))
+            }
+        }
+    }
+)
+
+private val documentErrorsSaver = mapSaver<SnapshotStateMap<String, String>>(
+    save = { it.toMap() },
+    restore = { values -> mutableStateMapOf<String, String>().apply {
+        values.forEach { (key, value) -> this[key] = value as String }
+    } }
 )

@@ -21,3 +21,15 @@ Automated checks cover decimal boundaries, storage recreation and rollback, numb
 The PDF renderer check runs as an instrumented Android test on an API 29 emulator; JVM unit tests do not emulate the platform PDF engine.
 
 CI uploads only synthetic PDF/PNG samples under invoice-pdf-validation. No real customer records are used. On-device visual verification of mixed Arabic/English text and the external sharing apps remains recommended.
+
+
+## Quotations and document-specific logos
+Quotation records live in an optional `quotes` array in the existing version-1 JSON payload; the SQLite schema is unchanged. Old snapshots default to an empty quote list. No existing data is reset. Quote numbering uses a separate durable QTE-year sequence. Quotes are never inserted into the invoice list or collection/VAT/balance summaries.
+
+Conversion checks validity and writes the new invoice, number reservation and quote link in one transaction. Repeating conversion returns the same invoice. A deleted linked invoice is not recreated silently. Converted quotes cannot be edited; deleting the quote keeps its invoice. Conversion preserves the agreed item/tax/branding snapshot, uses today's invoice date and a default due date 14 days later.
+
+The creation editor supports a local logo override for each document without changing the global profile. Item state, numeric input drafts and validation errors survive saved-state recreation; invalid text cannot silently fall back to previously valid amounts.
+
+PDFs now use an RTL item table. All cells wrap and split on whole layout-line boundaries, repeated headers identify continued pages, and totals have a separate summary. Quotations show validity dates and omit tax-invoice QR encoding even when seller VAT is present.
+
+CI uses synthetic records for quote storage/conversion/rollback tests and native editor creation/restoration tests. Fixed synthetic invoice and quotation PNG previews are printed in bounded chunks for visual inspection; no repository/customer documents are rendered by this step.

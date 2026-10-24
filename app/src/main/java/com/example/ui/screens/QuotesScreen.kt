@@ -32,7 +32,7 @@ private fun quoteMoney(value: Double) = String.format(Locale.US, "%,.2f", value)
 fun QuotesScreen(viewModel: FawratyViewModel) {
     val quotes by viewModel.quotes.collectAsState()
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("quote_detail_scroll"),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("quotes_list_scroll"),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(vertical = 16.dp)
     ) {
@@ -84,7 +84,7 @@ fun QuoteDetailScreen(quote: Quote, viewModel: FawratyViewModel) {
         dismissButton = { TextButton(onClick = { deleting = false }) { Text("إلغاء") } }
     )
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("quote_detail_scroll"),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(vertical = 16.dp)
     ) {
