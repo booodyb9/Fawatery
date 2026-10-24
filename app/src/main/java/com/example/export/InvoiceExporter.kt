@@ -24,14 +24,23 @@ object InvoiceExporter {
         .stripTrailingZeros().toPlainString() + "%"
 
     fun generatePdf(context: Context, invoice: Invoice, company: CompanyProfile,
-        accentColorHex: Int = Color.rgb(160, 124, 35)): File {
+        accentColorHex: Int = Color.rgb(160, 124, 35)): File =
+        generateDocument(context, invoice, company, accentColorHex, false)
+
+    fun generateQuotePdf(context: Context, quote: Quote, company: CompanyProfile,
+        accentColorHex: Int = Color.rgb(160, 124, 35)): File =
+        generateDocument(context, quote.document, company, accentColorHex, true)
+
+    private fun generateDocument(context: Context, invoice: Invoice, company: CompanyProfile,
+        accent: Int, isQuote: Boolean): File {
         val seller = invoice.seller ?: company
-        val qr = if (invoice.status == InvoiceStatus.DRAFT || seller.vatNumber.isBlank()) null
+        val qr = if (isQuote || invoice.status == InvoiceStatus.DRAFT || seller.vatNumber.isBlank()) null
             else InvoiceQr.bitmap(invoice.generateZatcaTlvBase64(seller.companyName, seller.vatNumber))
         val document = PdfDocument()
-        val output = File(context.cacheDir, "Invoice_${invoice.id.replace(Regex("[^A-Za-z0-9_-]"), "_")}.pdf")
+        val prefix = if (isQuote) "Quote" else "Invoice"
+        val output = File(context.cacheDir, "${prefix}_${invoice.id.replace(Regex("[^A-Za-z0-9_-]"), "_")}.pdf")
         try {
-            PdfInvoiceLayout(document, invoice, seller, accentColorHex, context).use { layout ->
+            PdfInvoiceLayout(document, invoice, seller, accent, context, isQuote).use { layout ->
                 layout.draw(qr)
                 output.outputStream().use { document.writeTo(it) }
             }
@@ -126,7 +135,8 @@ private class PdfInvoiceLayout(
     private val invoice: Invoice,
     private val company: CompanyProfile,
     private val accent: Int,
-    private val context: Context
+    private val context: Context,
+    private val isQuote: Boolean = false
 ) : java.io.Closeable {
     // At 60 PDF points, 256 pixels gives about 300 dpi without embedding the source photograph.
     private val logo = com.example.branding.CompanyLogoStore.load(context, company.logoFileName)
@@ -136,6 +146,7 @@ private class PdfInvoiceLayout(
     private lateinit var canvas: Canvas
     private var pageNumber = 0
     private var y = 0f
+    private var contentTop = 0f
     private val margin = 36f
     private val bodyWidth = 523f
     private val bottom = 774f
@@ -175,15 +186,20 @@ private class PdfInvoiceLayout(
         canvas.drawColor(Color.WHITE)
         paint.color = accent
         canvas.drawRect(0f, 0f, 595f, 6f, paint)
-        val heading = layout(company.companyName, bodyWidth - 75f, 14f, true)
+        val heading = layout(company.companyName.lineSequence().filter { it.isNotBlank() }.joinToString(" "), bodyWidth - 75f, 14f, true)
         drawLayout(heading, margin, 24f)
-        val title = layout(if (invoice.status == InvoiceStatus.DRAFT) "مسودة — ${invoice.invoiceNumber}" else "فاتورة — ${invoice.invoiceNumber}", bodyWidth - 75f, 10f)
+        val title = layout(when {
+            isQuote -> "عرض سعر — ${invoice.invoiceNumber}"
+            invoice.status == InvoiceStatus.DRAFT -> "مسودة — ${invoice.invoiceNumber}"
+            else -> "فاتورة — ${invoice.invoiceNumber}"
+        }, bodyWidth - 75f, 11f, true)
         drawLayout(title, margin, 30f + heading.height)
         run {
             val scale = minOf(60f / logo.width, 60f / logo.height)
             canvas.drawBitmap(logo, null, RectF(499f, 22f, 499f + logo.width * scale, 22f + logo.height * scale), paint)
         }
         y = maxOf(96f, 36f + heading.height + title.height)
+        contentTop = y
         check(y < bottom - 40f) { "اسم المنشأة أطول من المساحة المتاحة" }
         paint.color = Color.LTGRAY
         canvas.drawLine(margin, y - 8, margin + bodyWidth, y - 8, paint)
@@ -215,6 +231,102 @@ private class PdfInvoiceLayout(
         y += 8f
     }
 
+
+    private val columnWidths = listOf(100f, 80f, 80f, 60f, 177f, 26f)
+    private fun tableHeader(): Float {
+        val labels = listOf("الإجمالي", "الخصم", "سعر الوحدة", "الكمية / الوحدة", "الوصف", "م")
+        val blocks = labels.mapIndexed { index, label -> layout(label, columnWidths[index] - 12f, 9f, true) }
+        val height = blocks.maxOf { it.height }.toFloat() + 14f
+        paint.color = Color.rgb(235, 240, 244)
+        canvas.drawRect(margin, y, margin + bodyWidth, y + height, paint)
+        var x = margin
+        blocks.forEachIndexed { index, block ->
+            drawLayout(block, x + 6f, y + 7f)
+            x += columnWidths[index]
+        }
+        y += height
+        return height
+    }
+
+    /** Wrap every cell and repeat the header. Even a row taller than a page is split by whole lines. */
+    private fun itemTable() {
+        ensureSpace(90f)
+        var headerHeight = tableHeader()
+        invoice.items.forEachIndexed { index, item ->
+            val quantity = java.math.BigDecimal.valueOf(item.quantity).stripTrailingZeros().toPlainString()
+            val values = listOf(format(item.totalWithoutVat), format(item.discount), format(item.unitPrice),
+                quantity + "\n" + item.unit, item.description, (index + 1).toString())
+            val blocks = values.mapIndexed { column, value ->
+                layout(value, columnWidths[column] - 12f, if (column == 4) 10f else 9f)
+            }
+            val rowHeight = blocks.maxOf { it.height }.toFloat() + 12f
+            if (rowHeight <= bottom - contentTop - headerHeight && y + rowHeight > bottom) {
+                newPage()
+                headerHeight = tableHeader()
+            }
+            val lines = IntArray(blocks.size)
+            while (blocks.indices.any { lines[it] < blocks[it].lineCount }) {
+                val minimum = blocks.indices.filter { lines[it] < blocks[it].lineCount }
+                    .maxOf { blocks[it].getLineBottom(lines[it]) - blocks[it].getLineTop(lines[it]) }.toFloat() + 12f
+                if (y + minimum > bottom) {
+                    newPage()
+                    headerHeight = tableHeader()
+                }
+                val available = bottom - y - 12f
+                val ends = IntArray(blocks.size) { lines[it] - 1 }
+                var drawnHeight = 0f
+                blocks.forEachIndexed { column, block ->
+                    val first = lines[column]
+                    if (first < block.lineCount) {
+                        var last = first
+                        while (last + 1 < block.lineCount &&
+                            block.getLineBottom(last + 1) - block.getLineTop(first) <= available) last++
+                        ends[column] = last
+                        drawnHeight = maxOf(drawnHeight, (block.getLineBottom(last) - block.getLineTop(first)).toFloat())
+                    }
+                }
+                paint.color = if (index % 2 == 0) Color.WHITE else Color.rgb(248, 250, 252)
+                canvas.drawRect(margin, y, margin + bodyWidth, y + drawnHeight + 12f, paint)
+                var x = margin
+                blocks.forEachIndexed { column, block ->
+                    if (lines[column] < block.lineCount) {
+                        canvas.save()
+                        canvas.clipRect(x + 6f, y + 6f, x + columnWidths[column] - 6f, y + 6f + drawnHeight)
+                        drawLayout(block, x + 6f, y + 6f - block.getLineTop(lines[column]))
+                        canvas.restore()
+                        lines[column] = ends[column] + 1
+                    }
+                    x += columnWidths[column]
+                }
+                y += drawnHeight + 12f
+                paint.color = Color.rgb(223, 230, 237)
+                canvas.drawLine(margin, y, margin + bodyWidth, y, paint)
+            }
+        }
+        y += 16f
+    }
+
+    private fun totalsSection() {
+        ensureSpace(110f)
+        fun row(label: String, amount: Double, emphasized: Boolean = false) {
+            val height = if (emphasized) 40f else 28f
+            if (emphasized) {
+                paint.color = Color.rgb(237, 243, 246)
+                canvas.drawRoundRect(RectF(margin, y, margin + bodyWidth, y + height), 6f, 6f, paint)
+            }
+            val size = if (emphasized) 13f else 10f
+            drawLayout(layout(label, 220f, size, emphasized), margin + bodyWidth - 232f, y + 7f)
+            drawLayout(layout(format(amount) + " " + company.currencyAr, bodyWidth - 256f, size, emphasized),
+                margin + 12f, y + 7f)
+            y += height
+        }
+        row("المجموع قبل الضريبة", invoice.subtotal)
+        val rate = java.math.BigDecimal.valueOf(invoice.taxRate).multiply(java.math.BigDecimal(100)).stripTrailingZeros().toPlainString()
+        row("ضريبة القيمة المضافة ($rate%)", invoice.vatAmount)
+        row("الإجمالي", invoice.grandTotal, true)
+        y += 14f
+    }
+
     fun draw(qr: Bitmap?) {
         newPage()
         block("بيانات المنشأة", bold = true)
@@ -224,21 +336,12 @@ private class PdfInvoiceLayout(
         block("العميل: ${invoice.clientName} | ${invoice.clientCompany}", bold = true)
         block("رقم العميل الضريبي: ${invoice.clientVatNumber.ifBlank { "غير محدد" }}")
         block("العنوان: ${invoice.clientAddress} | الهاتف: ${invoice.clientPhone}")
-        block("تاريخ الفاتورة: ${invoice.issueDate} | الاستحقاق: ${invoice.dueDate}")
-        if (invoice.issuedAt.isNotBlank()) block("وقت الإصدار الفعلي (UTC): ${invoice.issuedAt}")
-        block("المشروع: ${invoice.projectCategory} | الحالة: ${invoice.status.labelAr}")
-        block("البنود", 12f, true)
-        invoice.items.forEachIndexed { index, item ->
-            block("${index + 1}. ${item.description}", bold = true)
-            block("الكمية: ${item.quantity} ${item.unit} | السعر: ${format(item.unitPrice)} | الخصم: ${format(item.discount)} | إجمالي البند: ${format(item.totalWithoutVat)} ${company.currencyAr}")
-            ensureSpace(12f)
-            paint.color = Color.LTGRAY
-            canvas.drawLine(margin, y, margin + bodyWidth, y, paint)
-            y += 10f
-        }
-        block("المجموع قبل الضريبة: ${format(invoice.subtotal)} ${company.currencyAr}", bold = true)
-        block("الضريبة (${java.math.BigDecimal.valueOf(invoice.taxRate * 100).stripTrailingZeros().toPlainString()}%): ${format(invoice.vatAmount)} ${company.currencyAr}")
-        block("الإجمالي: ${format(invoice.grandTotal)} ${company.currencyAr}", 13f, true)
+        block(if (isQuote) "تاريخ العرض: ${invoice.issueDate} | صالح حتى: ${invoice.dueDate}" else "تاريخ الفاتورة: ${invoice.issueDate} | الاستحقاق: ${invoice.dueDate}")
+        if (invoice.issuedAt.isNotBlank()) block((if (isQuote) "وقت إنشاء العرض (UTC): " else "وقت الإصدار الفعلي (UTC): ") + invoice.issuedAt)
+        block(if (isQuote) "المشروع: ${invoice.projectCategory} | عرض أسعار" else "المشروع: ${invoice.projectCategory} | الحالة: ${invoice.status.labelAr}")
+        block("البنود — القيم بالـ${company.currencyAr}", 12f, true)
+        itemTable()
+        totalsSection()
         block("البنك: ${invoice.bankName} | الآيبان: ${invoice.iban}")
         block("شروط السداد: ${invoice.paymentTerms}")
         block("الملاحظات: ${invoice.notes}")
@@ -248,6 +351,7 @@ private class PdfInvoiceLayout(
             drawLayout(layout("QR بيانات الفاتورة", bodyWidth - 150, 10f), margin, y + 30)
             y += 150
         }
+        if (isQuote) block("عرض سعر للتقييم والموافقة، ويُحوّل إلى فاتورة عند الاعتماد.", 9f)
         // Technical data encoding is not a clearance/certification claim.
         finishPage()
     }

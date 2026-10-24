@@ -63,6 +63,8 @@ jobs:
             adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/sample-arabic-invoice.pdf > app/build/validation-artifacts/sample-arabic-invoice.pdf
             adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/invoice-without-tax-number.pdf > app/build/validation-artifacts/invoice-without-tax-number.pdf
             adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/custom-logo-invoice.pdf > app/build/validation-artifacts/custom-logo-invoice.pdf
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/quotation-sample.pdf > app/build/validation-artifacts/quotation-sample.pdf
+            adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/quotation-first-page.png > app/build/validation-artifacts/quotation-first-page.png
             adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/first-page.png > app/build/validation-artifacts/first-page.png
             adb exec-out run-as com.aistudio.fawraty.invdx cat files/validation-artifacts/last-page.png > app/build/validation-artifacts/last-page.png
 
@@ -70,11 +72,20 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import base64
           root = Path("app/build/validation-artifacts")
-          for name, signature in [("sample-arabic-invoice.pdf", b"%PDF-"), ("invoice-without-tax-number.pdf", b"%PDF-"), ("custom-logo-invoice.pdf", b"%PDF-"), ("first-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10])), ("last-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10]))]:
+          for name, signature in [("sample-arabic-invoice.pdf", b"%PDF-"), ("invoice-without-tax-number.pdf", b"%PDF-"), ("custom-logo-invoice.pdf", b"%PDF-"), ("quotation-sample.pdf", b"%PDF-"), ("quotation-first-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10])), ("first-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10])), ("last-page.png", bytes([137, 80, 78, 71, 13, 10, 26, 10]))]:
               data = (root / name).read_bytes()
               assert data.startswith(signature) and len(data) > 1000, f"Invalid exported fixture: {name}, {len(data)} bytes"
               print(f"Validated {name}: {len(data)} bytes")
+          # Only fixed synthetic PDF fixtures from InvoicePdfTest are shown for visual review.
+          for name in ["first-page.png", "quotation-first-page.png"]:
+              encoded = base64.b64encode((root / name).read_bytes()).decode("ascii")
+              print("PDF_VISUAL_BEGIN:" + name)
+              for offset in range(0, len(encoded), 4096):
+                  print("PDF_VISUAL_CHUNK:" + encoded[offset:offset + 4096])
+              print("PDF_VISUAL_END")
+
           PY
 
       - name: Upload unit test reports

@@ -118,6 +118,49 @@ class InvoicePdfTest {
         loaded.recycle()
     }
 
+    @Test fun quotationPdfHasAValidTableAndNoTaxQrEvenWithSellerVat() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val seller = CompanyProfile(companyName = "منشأة اختبار — عرض سعر", vatNumber = "300000000000003")
+        val quote = Quote(pdfSampleInvoice().copy(
+            id = "QUOTE-PDF-TEST", invoiceNumber = "QTE-2026-001", seller = seller,
+            status = InvoiceStatus.DRAFT, issuedAt = "2026-10-24T12:00:00Z", notes = "عينة اصطناعية للفحص"
+        ))
+        val file = InvoiceExporter.generateQuotePdf(context, quote, seller)
+        val artifacts = File(context.filesDir, "validation-artifacts").apply { mkdirs() }
+        file.copyTo(File(artifacts, "quotation-sample.pdf"), overwrite = true)
+        PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)).use { renderer ->
+            assertTrue(renderer.pageCount > 0)
+            renderer.openPage(0).use { page ->
+                val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                File(artifacts, "quotation-first-page.png").outputStream().use {
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                }
+                val pixels = IntArray(bitmap.width * bitmap.height)
+                bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                try {
+                    com.google.zxing.qrcode.QRCodeReader().decode(
+                        BinaryBitmap(HybridBinarizer(RGBLuminanceSource(bitmap.width, bitmap.height, pixels))))
+                    fail("Offers must not carry a tax invoice QR")
+                } catch (_: NotFoundException) {}
+                bitmap.recycle()
+            }
+        }
+    }
+
+    @Test fun oneVeryLongItemCellPaginatesWithoutFailingPdfGeneration() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val seller = CompanyProfile(companyName = "منشأة اختبار", vatNumber = "300000000000003")
+        val invoice = pdfSampleInvoice().copy(id = "LONG-CELL", seller = seller, issuedAt = "2026-10-24T12:00:00Z",
+            items = listOf(InvoiceItem("long", "وصف عربي طويل مع English 123 ".repeat(150) + "نهاية الوصف", 1.0, 100.0)))
+        val file = InvoiceExporter.generatePdf(context, invoice, seller)
+        assertTrue(file.length() < 5_000_000)
+        PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)).use {
+            assertTrue("A single long cell must continue across pages", it.pageCount >= 3)
+        }
+    }
+
     @Test fun longArabicInvoicePaginatesAndItsPrintedQrDecodes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val company = CompanyProfile(companyName = "منشأة تجريبية للفحص — TEST ONLY", vatNumber = "300000000000003",

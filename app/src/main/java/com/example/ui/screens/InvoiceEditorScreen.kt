@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.ui.components.DocumentLogoPicker
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -76,28 +78,36 @@ import java.util.UUID
 @Composable
 fun InvoiceEditorScreen(
     viewModel: FawratyViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    quoteMode: Boolean = false
 ) {
     val context = LocalContext.current
     val clients by viewModel.clients.collectAsState()
     val catalog by viewModel.catalog.collectAsState()
     val company by viewModel.companyProfile.collectAsState()
     val prefillProduct by viewModel.prefillProduct.collectAsState()
+    val editingQuote by viewModel.editingQuote.collectAsState()
+    val seed = if (quoteMode) editingQuote?.document else null
+    val taxRate = seed?.taxRate ?: company.defaultTaxRate
+    val startingLogo = if (seed?.seller != null) seed.seller.logoFileName else company.logoFileName
+    var selectedLogo by rememberSaveable(seed?.id) { mutableStateOf(startingLogo) }
+    var logoBusy by remember { mutableStateOf(false) }
+
 
     val formErrors = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
-    var selectedClientId by remember { mutableStateOf<String?>(null) }
-    var clientName by remember { mutableStateOf("") }
-    var clientCompany by remember { mutableStateOf("") }
-    var clientPhone by remember { mutableStateOf("") }
-    var clientEmail by remember { mutableStateOf("") }
-    var clientVatNumber by remember { mutableStateOf("") }
-    var clientAddress by remember { mutableStateOf("") }
+    var selectedClientId by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientId) }
+    var clientName by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientName.orEmpty()) }
+    var clientCompany by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientCompany.orEmpty()) }
+    var clientPhone by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientPhone.orEmpty()) }
+    var clientEmail by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientEmail.orEmpty()) }
+    var clientVatNumber by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientVatNumber.orEmpty()) }
+    var clientAddress by rememberSaveable(seed?.id) { mutableStateOf(seed?.clientAddress.orEmpty()) }
 
-    var issueDate by remember { mutableStateOf(InvoiceDates.today()) }
-    var dueDate by remember { mutableStateOf(InvoiceDates.plusDays(InvoiceDates.today(), 14)) }
-    var projectCategory by remember { mutableStateOf("واجهات أبراج ومباني تجارية") }
-    var notes by remember { mutableStateOf("الضمان 10 سنوات على أعمال الزجاج المعماري والعزل الحراري وكود البناء السعودي.") }
-    var paymentTerms by remember { mutableStateOf("50% دفعة أولى، 40% عند التوريد، 10% عند التسليم النهائي.") }
+    var issueDate by rememberSaveable(seed?.id) { mutableStateOf(seed?.issueDate ?: InvoiceDates.today()) }
+    var dueDate by rememberSaveable(seed?.id) { mutableStateOf(seed?.dueDate ?: InvoiceDates.plusDays(InvoiceDates.today(), 14)) }
+    var projectCategory by rememberSaveable(seed?.id) { mutableStateOf(seed?.projectCategory ?: "واجهات أبراج ومباني تجارية") }
+    var notes by rememberSaveable(seed?.id) { mutableStateOf(seed?.notes ?: "الضمان 10 سنوات على أعمال الزجاج المعماري والعزل الحراري وكود البناء السعودي.") }
+    var paymentTerms by rememberSaveable(seed?.id) { mutableStateOf(seed?.paymentTerms ?: "50% دفعة أولى، 40% عند التوريد، 10% عند التسليم النهائي.") }
 
     var showClientDropdown by remember { mutableStateOf(false) }
     var showCatalogDropdown by remember { mutableStateOf(false) }
@@ -106,13 +116,15 @@ fun InvoiceEditorScreen(
         prefillProduct?.let { product ->
             runCatching {
                 InvoiceItem(UUID.randomUUID().toString(), product.name, 1.0, product.defaultPrice, unit = product.unit)
-                    .also { calculateInvoiceTotals(listOf(it), company.defaultTaxRate) }
+                    .also { calculateInvoiceTotals(listOf(it), taxRate) }
             }
         }
     }
-    val items = remember {
-        mutableStateListOf(initialItem?.getOrNull()
-            ?: InvoiceItem(UUID.randomUUID().toString(), "", 1.0, 0.0, unit = "متر مربع"))
+    val items = remember(seed?.id) {
+        mutableStateListOf<InvoiceItem>().apply {
+            if (seed != null) addAll(seed.items)
+            else add(initialItem?.getOrNull() ?: InvoiceItem(UUID.randomUUID().toString(), "", 1.0, 0.0, unit = "متر مربع"))
+        }
     }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         initialItem?.exceptionOrNull()?.let {
@@ -129,13 +141,13 @@ fun InvoiceEditorScreen(
 
     fun addItemSafely(newItem: InvoiceItem) {
         try {
-            calculateInvoiceTotals(items.toList() + newItem, company.defaultTaxRate)
+            calculateInvoiceTotals(items.toList() + newItem, taxRate)
             items.add(newItem)
         } catch (error: IllegalArgumentException) {
             Toast.makeText(context, error.message ?: "قيمة البند غير صالحة", Toast.LENGTH_LONG).show()
         }
     }
-    val totals = calculateInvoiceTotals(items, company.defaultTaxRate)
+    val totals = calculateInvoiceTotals(items, taxRate)
     val subtotal = totals.subtotal
     val vatAmount = totals.vat
     val grandTotal = totals.grandTotal
@@ -143,6 +155,7 @@ fun InvoiceEditorScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
+            .testTag("document_editor_scroll")
             .background(Color.Transparent)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -171,16 +184,23 @@ fun InvoiceEditorScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = "إنشاء فاتورة جديدة",
+                        text = if (quoteMode) "إنشاء عرض سعر" else "إنشاء فاتورة جديدة",
                         color = TextPrimary,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                     Text(
-                        text = "إنشاء فاتورة وحفظها على الجهاز",
+                        text = if (quoteMode) "حفظ عرض مستقل عن المبيعات والتحصيل" else "إنشاء فاتورة وحفظها على الجهاز",
                         color = RoyalGold,
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
+            }
+        }
+
+        item {
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                DocumentLogoPicker(selectedLogo, company.logoFileName,
+                    onLogoChanged = { selectedLogo = it }, onBusyChanged = { logoBusy = it })
             }
         }
 
@@ -258,7 +278,7 @@ fun InvoiceEditorScreen(
                         value = clientName,
                         onValueChange = { clientName = it; selectedClientId = null },
                         label = { Text("اسم العميل / المسؤول") },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("document_client_name"),
                         shape = RoundedCornerShape(10.dp),
                         colors = getTextFieldColors()
                     )
@@ -333,7 +353,7 @@ fun InvoiceEditorScreen(
                         OutlinedTextField(
                             value = dueDate,
                             onValueChange = { dueDate = it },
-                            label = { Text("تاريخ الاستحقاق") },
+                            label = { Text(if (quoteMode) "صالح حتى" else "تاريخ الاستحقاق") },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
                             colors = getTextFieldColors()
@@ -462,7 +482,7 @@ fun InvoiceEditorScreen(
                 }
                 try {
                     val updated = item.copy(description = desc, quantity = quantity, unitPrice = price, unit = unitStr, discount = discount)
-                    calculateInvoiceTotals(items.toMutableList().apply { set(index, updated) }, company.defaultTaxRate)
+                    calculateInvoiceTotals(items.toMutableList().apply { set(index, updated) }, taxRate)
                     items[index] = updated
                     if (desc.isBlank()) formErrors[item.id] = "وصف البند مطلوب" else formErrors.remove(item.id)
                 } catch (error: IllegalArgumentException) {
@@ -510,7 +530,7 @@ fun InvoiceEditorScreen(
                             updateItem()
                         },
                         label = { Text("بيان الصنف أو الخدمة") },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("document_item_description_$index"),
                         shape = RoundedCornerShape(8.dp),
                         colors = getTextFieldColors()
                     )
@@ -551,7 +571,7 @@ fun InvoiceEditorScreen(
                                 updateItem()
                             },
                             label = { Text("السعر") },
-                            modifier = Modifier.weight(1.2f),
+                            modifier = Modifier.weight(1.2f).testTag("document_item_price_$index"),
                             shape = RoundedCornerShape(8.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             colors = getTextFieldColors()
@@ -594,7 +614,7 @@ fun InvoiceEditorScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "الملخص المالي للفاتورة",
+                        text = if (quoteMode) "قيمة عرض السعر" else "الملخص المالي للفاتورة",
                         color = RoyalGold,
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                     )
@@ -611,7 +631,7 @@ fun InvoiceEditorScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(text = "ضريبة القيمة المضافة (${company.defaultTaxRate * 100}%)", color = GlassBlue)
+                        Text(text = "ضريبة القيمة المضافة (${taxRate * 100}%)", color = GlassBlue)
                         Text(text = "${numberFormat.format(vatAmount)} ${company.currencyAr}", color = GlassBlue, fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -622,7 +642,7 @@ fun InvoiceEditorScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "المبلغ الإجمالي المستحق", color = RoyalGold, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(text = if (quoteMode) "إجمالي العرض" else "المبلغ الإجمالي المستحق", color = RoyalGold, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                         Text(
                             text = "${numberFormat.format(grandTotal)} ${company.currencyAr}",
                             color = RoyalGold,
@@ -661,6 +681,7 @@ fun InvoiceEditorScreen(
         // Save & Issue Button
         item {
             Button(
+                enabled = !logoBusy,
                 onClick = {
                     if (items.any { it.description.isBlank() }) {
                         Toast.makeText(context, "أكمل وصف كل بند", Toast.LENGTH_LONG).show()
@@ -680,23 +701,25 @@ fun InvoiceEditorScreen(
                     }
 
                     try {
-                    viewModel.createInvoice(
+                    if (quoteMode) viewModel.createQuote(
                         clientName = clientName,
                         clientCompany = clientCompany.ifEmpty { clientName },
-                        clientPhone = clientPhone.trim(),
-                        clientEmail = clientEmail,
-                        clientVatNumber = clientVatNumber.trim(),
-                        clientAddress = clientAddress.trim(),
-                        issueDate = issueDate,
-                        dueDate = dueDate,
-                        projectCategory = projectCategory,
-                        items = items.toList(),
-                        notes = notes,
-                        paymentTerms = paymentTerms,
-                        status = InvoiceStatus.PENDING,
-                        clientId = selectedClientId
+                        clientPhone = clientPhone.trim(), clientEmail = clientEmail,
+                        clientVatNumber = clientVatNumber.trim(), clientAddress = clientAddress.trim(),
+                        issueDate = issueDate, dueDate = dueDate, projectCategory = projectCategory,
+                        items = items.toList(), notes = notes, paymentTerms = paymentTerms,
+                        clientId = selectedClientId, logoFileName = selectedLogo
+                    ) else viewModel.createInvoice(
+                        clientName = clientName,
+                        clientCompany = clientCompany.ifEmpty { clientName },
+                        clientPhone = clientPhone.trim(), clientEmail = clientEmail,
+                        clientVatNumber = clientVatNumber.trim(), clientAddress = clientAddress.trim(),
+                        issueDate = issueDate, dueDate = dueDate, projectCategory = projectCategory,
+                        items = items.toList(), notes = notes, paymentTerms = paymentTerms,
+                        clientId = selectedClientId, logoFileName = selectedLogo,
+                        status = InvoiceStatus.PENDING
                     )
-                    Toast.makeText(context, "تم حفظ الفاتورة بنجاح", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (quoteMode) "تم حفظ عرض السعر بنجاح" else "تم حفظ الفاتورة بنجاح", Toast.LENGTH_SHORT).show()
                     } catch (error: Exception) {
                         Toast.makeText(context, error.message ?: "تعذر حفظ الفاتورة", Toast.LENGTH_LONG).show()
                     }
@@ -709,7 +732,7 @@ fun InvoiceEditorScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = GlassBlue)
             ) {
                 Text(
-                    text = "إصدار وحفظ الفاتورة",
+                    text = if (quoteMode) "حفظ عرض السعر" else "إصدار وحفظ الفاتورة",
                     color = Color.White,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                 )

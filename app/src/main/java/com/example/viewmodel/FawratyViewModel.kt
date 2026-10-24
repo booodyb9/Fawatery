@@ -25,6 +25,7 @@ import kotlinx.coroutines.isActive
 enum class NavigationTab(val titleAr: String, val titleEn: String) {
     DASHBOARD("الرئيسية", "Dashboard"),
     INVOICES("الفواتير", "Invoices"),
+    QUOTES("عروض الأسعار", "Quotes"),
     CLIENTS("العملاء", "Clients"),
     CATALOG("الكتالوج", "Catalog"),
     REPORTS("التقارير", "Reports"),
@@ -34,7 +35,9 @@ enum class NavigationTab(val titleAr: String, val titleEn: String) {
 enum class SubScreen {
     NONE,
     CREATE_INVOICE,
-    INVOICE_DETAIL
+    INVOICE_DETAIL,
+    CREATE_QUOTE,
+    QUOTE_DETAIL
 }
 
 data class FinancialStats(
@@ -57,6 +60,11 @@ class FawratyViewModel(
     val clients: StateFlow<List<Client>> = repository.clients
     val catalog: StateFlow<List<CatalogProduct>> = repository.catalog
     val allInvoices: StateFlow<List<Invoice>> = repository.invoices
+    val quotes = repository.quotes
+    private val _selectedQuote = MutableStateFlow<Quote?>(null)
+    val selectedQuote = _selectedQuote.asStateFlow()
+    private val _editingQuote = MutableStateFlow<Quote?>(null)
+    val editingQuote = _editingQuote.asStateFlow()
 
     private val _selectedTab = MutableStateFlow(NavigationTab.DASHBOARD)
     val selectedTab: StateFlow<NavigationTab> = _selectedTab.asStateFlow()
@@ -138,6 +146,7 @@ class FawratyViewModel(
     }
 
     fun openCreateInvoice(product: CatalogProduct? = null) {
+        _editingQuote.value = null
         _prefillProduct.value = product
         _activeSubScreen.value = SubScreen.CREATE_INVOICE
     }
@@ -147,6 +156,8 @@ class FawratyViewModel(
             _activeSubScreen.value = SubScreen.NONE
             _selectedInvoice.value = null
             _prefillProduct.value = null
+            _editingQuote.value = null
+            _selectedQuote.value = null
             return true
         }
         if (_selectedTab.value != NavigationTab.DASHBOARD) {
@@ -170,7 +181,8 @@ class FawratyViewModel(
         notes: String,
         paymentTerms: String,
         status: InvoiceStatus = InvoiceStatus.PENDING,
-        clientId: String? = null
+        clientId: String? = null,
+        logoFileName: String? = companyProfile.value.logoFileName
     ): Invoice {
         val nextNumber = repository.generateNextInvoiceNumber()
         val invoice = Invoice(
@@ -193,13 +205,71 @@ class FawratyViewModel(
             bankName = companyProfile.value.bankName,
             iban = companyProfile.value.iban,
             issuedAt = if (status == InvoiceStatus.DRAFT) "" else InvoiceDates.utcNow(),
-            seller = if (status == InvoiceStatus.DRAFT) null else companyProfile.value,
+            seller = if (status == InvoiceStatus.DRAFT) null else companyProfile.value.copy(logoFileName = logoFileName),
             clientId = clientId
         )
         val saved = repository.addInvoice(invoice)
         _selectedInvoice.value = saved
         _activeSubScreen.value = SubScreen.INVOICE_DETAIL
         return saved
+    }
+
+
+    fun openQuoteDetail(quote: Quote) {
+        _selectedQuote.value = quote
+        _activeSubScreen.value = SubScreen.QUOTE_DETAIL
+    }
+
+    fun openCreateQuote(quote: Quote? = null) {
+        _selectedTab.value = NavigationTab.QUOTES
+        _editingQuote.value = quote
+        _prefillProduct.value = null
+        _activeSubScreen.value = SubScreen.CREATE_QUOTE
+    }
+
+    fun createQuote(
+        clientName: String, clientCompany: String, clientPhone: String, clientEmail: String,
+        clientVatNumber: String, clientAddress: String, issueDate: String, dueDate: String,
+        projectCategory: String, items: List<InvoiceItem>, notes: String, paymentTerms: String,
+        clientId: String? = null, logoFileName: String? = companyProfile.value.logoFileName
+    ): Quote {
+        val editing = _editingQuote.value
+        val seller = (editing?.document?.seller ?: companyProfile.value).copy(logoFileName = logoFileName)
+        val document = Invoice(
+            id = editing?.id ?: UUID.randomUUID().toString(),
+            invoiceNumber = editing?.number ?: repository.generateNextQuoteNumber(),
+            clientName = clientName, clientCompany = clientCompany, clientPhone = clientPhone,
+            clientEmail = clientEmail, clientVatNumber = clientVatNumber, clientAddress = clientAddress,
+            issueDate = issueDate, dueDate = dueDate, projectCategory = projectCategory, items = items,
+            taxRate = editing?.document?.taxRate ?: companyProfile.value.defaultTaxRate,
+            status = InvoiceStatus.DRAFT, notes = notes, paymentTerms = paymentTerms,
+            bankName = editing?.document?.bankName ?: seller.bankName,
+            iban = editing?.document?.iban ?: seller.iban, issuedAt = editing?.document?.issuedAt ?: InvoiceDates.utcNow(),
+            seller = seller, clientId = clientId
+        )
+        val saved = repository.saveQuote(document)
+        _editingQuote.value = null
+        openQuoteDetail(saved)
+        return saved
+    }
+
+    fun deleteQuote(quoteId: String): Boolean = change {
+        repository.deleteQuote(quoteId)
+        _selectedQuote.value = null
+        _activeSubScreen.value = SubScreen.NONE
+    }
+
+    fun convertQuote(quoteId: String): Boolean = change {
+        val invoice = repository.convertQuoteToInvoice(quoteId)
+        _selectedQuote.value = repository.quotes.value.find { it.id == quoteId }
+        openInvoiceDetail(invoice)
+    }
+
+    fun openQuoteInvoice(quote: Quote): Boolean = change {
+        val invoice = requireNotNull(allInvoices.value.find { it.id == quote.convertedInvoiceId }) {
+            "الفاتورة المرتبطة غير موجودة"
+        }
+        openInvoiceDetail(invoice)
     }
 
     fun updateInvoiceStatus(invoiceId: String, status: InvoiceStatus): Boolean = change {

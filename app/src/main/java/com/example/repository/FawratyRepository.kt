@@ -17,7 +17,8 @@ internal data class InvoiceStore(
     val catalog: List<CatalogProduct> = defaultCatalog(),
     val invoices: List<Invoice> = emptyList(),
     val nextNumbers: Map<String, Int> = emptyMap(),
-    val reminderOptions: ReminderOptions = ReminderOptions()
+    val reminderOptions: ReminderOptions = ReminderOptions(),
+    val quotes: List<Quote> = emptyList()
 )
 
 /** Offline durable storage. Existing snapshots are never replaced when loading fails. */
@@ -33,6 +34,8 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) : java
     val catalog = _catalog.asStateFlow()
     private val _invoices = MutableStateFlow<List<Invoice>>(emptyList())
     val invoices = _invoices.asStateFlow()
+    private val _quotes = MutableStateFlow<List<Quote>>(emptyList())
+    val quotes = _quotes.asStateFlow()
     private val _reminderOptions = MutableStateFlow(ReminderOptions())
     val reminderOptions = _reminderOptions.asStateFlow()
     private val _storageError = MutableStateFlow<String?>(null)
@@ -61,6 +64,7 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) : java
         _companyProfile.value = data.company
         _catalog.value = data.catalog
         _invoices.value = invoices
+        _quotes.value = data.quotes
         _reminderOptions.value = data.reminderOptions
         _clients.value = data.clients.map { client ->
             val related = invoices.filter { it.clientId == client.id && it.status != InvoiceStatus.DRAFT }
@@ -177,6 +181,91 @@ class FawratyRepository(context: Context = FawratyApplication.appContext) : java
             status = InvoiceStatus.DRAFT, issuedAt = "", seller = null,
             bankName = companyProfile.value.bankName, iban = companyProfile.value.iban
         ))
+    }
+
+
+    /** Separate durable numbering, so offers never consume invoice numbers or reuse deleted ones. */
+    fun generateNextQuoteNumber(): String {
+        var result = ""
+        update { data ->
+            val year = InvoiceDates.today().take(4)
+            val prefix = "QTE-$year-"
+            val maximum = data.quotes.mapNotNull {
+                it.number.takeIf { number -> number.startsWith(prefix) }?.removePrefix(prefix)?.toIntOrNull()
+            }.maxOrNull() ?: 0
+            val next = maxOf(data.nextNumbers[prefix] ?: 1, maximum + 1)
+            require(next < Int.MAX_VALUE) { "تعذر حجز رقم عرض جديد" }
+            result = prefix + next.toString().padStart(3, '0')
+            data.copy(nextNumbers = data.nextNumbers + (prefix to next + 1))
+        }
+        return result
+    }
+
+    fun saveQuote(document: Invoice): Quote {
+        require(document.status == InvoiceStatus.DRAFT) { "حالة عرض السعر غير صالحة" }
+        var saved: Quote? = null
+        update { data ->
+            val old = data.quotes.find { it.id == document.id }
+            require(old?.convertedInvoiceId == null) { "تم تحويل هذا العرض لفاتورة؛ لا يمكن تعديل العرض بعد التحويل" }
+            require(data.quotes.none { it.id != document.id && it.number == document.invoiceNumber }) { "رقم عرض السعر مستخدم بالفعل" }
+            val seller = document.seller ?: data.company
+            validateSeller(seller)
+            val existing = data.clients.find { it.id == document.clientId }
+                ?: data.clients.find { it.name == document.clientName && it.company == document.clientCompany && it.phone == document.clientPhone }
+            val client = existing ?: Client(UUID.randomUUID().toString(), document.clientName, document.clientCompany,
+                document.clientPhone, document.clientEmail, document.clientVatNumber, document.clientAddress)
+            val normalized = document.copy(clientId = client.id, seller = seller,
+                issuedAt = old?.document?.issuedAt ?: document.issuedAt.ifBlank { InvoiceDates.utcNow() })
+            saved = Quote(normalized)
+            data.copy(quotes = listOf(requireNotNull(saved)) + data.quotes.filterNot { it.id == document.id },
+                clients = if (existing == null) listOf(client) + data.clients else data.clients)
+        }
+        return requireNotNull(saved)
+    }
+
+    fun deleteQuote(quoteId: String) {
+        update { data -> data.copy(quotes = data.quotes.filterNot { it.id == quoteId }) }
+    }
+
+    /** Reserve the invoice number, create it and link the offer in one SQLite transaction. */
+    fun convertQuoteToInvoice(quoteId: String): Invoice {
+        var result: Invoice? = null
+        update { data ->
+            val quote = requireNotNull(data.quotes.find { it.id == quoteId }) { "عرض السعر غير موجود" }
+            val linked = quote.convertedInvoiceId
+            if (linked != null) {
+                result = requireNotNull(data.invoices.find { it.id == linked }) {
+                    "تم حذف الفاتورة المرتبطة؛ لن يتم إنشاء فاتورة أخرى تلقائيًا"
+                }
+                data
+            } else {
+                require(!quote.isExpired()) { "انتهت صلاحية العرض؛ حدّث تاريخ الصلاحية قبل التحويل" }
+                val seller = quote.document.seller ?: data.company
+                validateSeller(seller)
+                val year = InvoiceDates.today().take(4)
+                val prefix = "INV-$year-"
+                val maximum = data.invoices.mapNotNull {
+                    it.invoiceNumber.takeIf { number -> number.startsWith(prefix) }?.removePrefix(prefix)?.toIntOrNull()
+                }.maxOrNull() ?: 0
+                val next = maxOf(data.nextNumbers[year] ?: 1, maximum + 1)
+                require(next < Int.MAX_VALUE) { "تعذر حجز رقم فاتورة جديد" }
+                val document = quote.document
+                val existing = data.clients.find { it.id == document.clientId }
+                    ?: data.clients.find { it.name == document.clientName && it.company == document.clientCompany && it.phone == document.clientPhone }
+                val client = existing ?: Client(UUID.randomUUID().toString(), document.clientName, document.clientCompany,
+                    document.clientPhone, document.clientEmail, document.clientVatNumber, document.clientAddress)
+                val invoice = document.copy(id = UUID.randomUUID().toString(),
+                    invoiceNumber = prefix + next.toString().padStart(3, '0'),
+                    issueDate = InvoiceDates.today(), dueDate = InvoiceDates.plusDays(InvoiceDates.today(), 14),
+                    status = InvoiceStatus.PENDING, issuedAt = InvoiceDates.utcNow(), seller = seller, clientId = client.id)
+                result = invoice
+                data.copy(invoices = listOf(invoice) + data.invoices,
+                    quotes = data.quotes.map { if (it.id == quoteId) it.copy(convertedInvoiceId = invoice.id) else it },
+                    nextNumbers = data.nextNumbers + (year to next + 1),
+                    clients = if (existing == null) listOf(client) + data.clients else data.clients)
+            }
+        }
+        return requireNotNull(result)
     }
 
     fun addClient(client: Client) {
