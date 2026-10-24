@@ -28,4 +28,8 @@ fun calculateInvoiceTotals(items: List<InvoiceItem>, taxRate: Double): InvoiceTo
 
 
 /** Display adapter shared by the UI and PDF; line totals keep their independent halala rounding. */
-fun formatInvoiceRate(value: Double): String = String.format(java.util.Locale.US, "%.2f", value)
+fun formatInvoiceRate(value: Double): String {
+    require(value.isFinite()) { "قيمة غير صالحة للعرض" }
+    val decimal = BigDecimal.valueOf(value).stripTrailingZeros()
+    return decimal.setScale(maxOf(2, decimal.scale())).toPlainString()
+}

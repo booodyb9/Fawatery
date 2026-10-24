@@ -33,3 +33,6 @@ The creation editor supports a local logo override for each document without cha
 PDFs now use an RTL item table. All cells wrap and split on whole layout-line boundaries, repeated headers identify continued pages, and totals have a separate summary. Quotations show validity dates and omit tax-invoice QR encoding even when seller VAT is present.
 
 CI uses synthetic records for quote storage/conversion/rollback tests and native editor creation/restoration tests. Fixed synthetic invoice and quotation PNG previews are printed in bounded chunks for visual inspection; no repository/customer documents are rendered by this step.
+
+
+Unit prices and absolute discounts are displayed with their stored decimal precision (at least two decimal places). This keeps the printed operands consistent with the existing quantity × price − discount calculation; rounding is applied to the final line amount, VAT and grand total. Regression cases include a three-decimal unit rate, a sub-halala discount and a small rate that would otherwise print as zero.
