@@ -64,6 +64,7 @@ import kotlinx.coroutines.withContext
 import com.example.export.ReminderType
 import com.example.model.Invoice
 import com.example.model.InvoiceStatus
+import com.example.model.formatInvoiceRate
 import com.example.reminders.ReminderManager
 import com.example.ui.components.GlassCard
 import com.example.ui.components.StatusBadge
@@ -479,7 +480,7 @@ fun InvoiceDetailScreen(
                                 )
                                 if (item.discount > 0) {
                                     Text(
-                                        text = "خصم: ${numberFormat.format(item.discount)} ${company.currencyAr}",
+                                        text = "خصم: ${formatInvoiceRate(item.discount)} ${company.currencyAr}",
                                         color = StatusPaid,
                                         style = MaterialTheme.typography.labelSmall
                                     )
@@ -493,7 +494,7 @@ fun InvoiceDetailScreen(
                                 textAlign = TextAlign.Center
                             )
                             Text(
-                                text = numberFormat.format(item.unitPrice),
+                                text = formatInvoiceRate(item.unitPrice),
                                 color = TextSecondary,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.weight(1f),

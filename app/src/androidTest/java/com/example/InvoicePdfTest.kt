@@ -123,7 +123,8 @@ class InvoicePdfTest {
         val seller = CompanyProfile(companyName = "منشأة اختبار — عرض سعر", vatNumber = "300000000000003")
         val quote = Quote(pdfSampleInvoice().copy(
             id = "QUOTE-PDF-TEST", invoiceNumber = "QTE-2026-001", seller = seller,
-            status = InvoiceStatus.DRAFT, issuedAt = "2026-10-24T12:00:00Z", notes = "عينة اصطناعية للفحص"
+            status = InvoiceStatus.DRAFT, issuedAt = "2026-10-24T12:00:00Z", notes = "عينة اصطناعية للفحص",
+            items = listOf(InvoiceItem("precision", "خدمة بسعر وحدة دقيق", 2.0, 10.335, discount = 0.50))
         ))
         val file = InvoiceExporter.generateQuotePdf(context, quote, seller)
         val artifacts = File(context.filesDir, "validation-artifacts").apply { mkdirs() }

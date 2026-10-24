@@ -81,6 +81,23 @@ class InvoiceExportTest {
         ), 0.0)
     }
 
+    @Test fun printedRatesMustReproduceTheAgreedLineAmounts() {
+        val rows = listOf(
+            InvoiceItem("a", "three-decimal rate", 2.0, 10.335, discount = 0.50),
+            InvoiceItem("b", "sub-halala discount", 1.0, 1.0, discount = 0.005),
+            InvoiceItem("c", "small rate", 100000000.0, 0.00000001)
+        )
+        for (row in rows) {
+            val printed = java.math.BigDecimal.valueOf(row.quantity)
+                .multiply(java.math.BigDecimal(formatInvoiceRate(row.unitPrice)))
+                .subtract(java.math.BigDecimal(formatInvoiceRate(row.discount)))
+                .setScale(2, java.math.RoundingMode.HALF_UP).toDouble()
+            assertEquals("Printed price/discount must reproduce " + row.description,
+                row.totalWithoutVat, printed, 0.0)
+        }
+        assertEquals("100.00", formatInvoiceRate(100.0))
+    }
+
     @Test fun totalsUseTheSameRoundingAsTheInvoiceAndSupportArabicDigits() {
         val lines = listOf(InvoiceItem("1", "a", 1.0, 0.335), InvoiceItem("2", "b", 1.0, 0.335))
         val totals = calculateInvoiceTotals(lines, 0.15)

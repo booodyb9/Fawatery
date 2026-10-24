@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.export.InvoiceExporter
 import com.example.model.Quote
+import com.example.model.formatInvoiceRate
 import com.example.ui.components.CompanyLogo
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.*
@@ -147,8 +148,8 @@ fun QuoteDetailScreen(quote: Quote, viewModel: FawratyViewModel) {
             GlassCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(item.description, color = TextPrimary, fontWeight = FontWeight.Bold)
-                    Text("${item.quantity} ${item.unit} × ${quoteMoney(item.unitPrice)}", color = TextSecondary)
-                    if (item.discount > 0) Text("الخصم: ${quoteMoney(item.discount)}", color = TextSecondary)
+                    Text("${item.quantity} ${item.unit} × ${formatInvoiceRate(item.unitPrice)}", color = TextSecondary)
+                    if (item.discount > 0) Text("الخصم: ${formatInvoiceRate(item.discount)}", color = TextSecondary)
                     Text("${quoteMoney(item.totalWithoutVat)} ${company.currencyAr}", color = RoyalGold)
                 }
             }

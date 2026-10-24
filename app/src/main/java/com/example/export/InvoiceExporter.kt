@@ -256,7 +256,7 @@ private class PdfInvoiceLayout(
         var headerHeight = tableHeader()
         invoice.items.forEachIndexed { index, item ->
             val quantity = java.math.BigDecimal.valueOf(item.quantity).stripTrailingZeros().toPlainString()
-            val values = listOf(format(item.totalWithoutVat), format(item.discount), format(item.unitPrice),
+            val values = listOf(format(item.totalWithoutVat), formatInvoiceRate(item.discount), formatInvoiceRate(item.unitPrice),
                 quantity + "\n" + item.unit, item.description, (index + 1).toString())
             val blocks = values.mapIndexed { column, value ->
                 layout(value, columnWidths[column] - 12f, if (column == 4) 10f else 9f)

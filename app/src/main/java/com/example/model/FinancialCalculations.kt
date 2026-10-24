@@ -25,3 +25,7 @@ fun calculateInvoiceTotals(items: List<InvoiceItem>, taxRate: Double): InvoiceTo
     require(BigDecimal.valueOf(grand) <= MAX_INVOICE_AMOUNT) { "إجمالي الفاتورة يتجاوز الحد المالي المدعوم" }
     return InvoiceTotals(subtotal, vat, grand)
 }
+
+
+/** Display adapter shared by the UI and PDF; line totals keep their independent halala rounding. */
+fun formatInvoiceRate(value: Double): String = String.format(java.util.Locale.US, "%.2f", value)
