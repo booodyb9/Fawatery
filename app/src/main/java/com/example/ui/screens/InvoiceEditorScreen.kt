@@ -189,7 +189,7 @@ fun InvoiceEditorScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = if (quoteMode) "إنشاء عرض سعر" else "إنشاء فاتورة جديدة",
+                        text = if (quoteMode) { if (seed != null) "تعديل عرض السعر" else "إنشاء عرض سعر" } else "إنشاء فاتورة جديدة",
                         color = TextPrimary,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )

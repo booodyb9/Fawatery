@@ -158,10 +158,12 @@ private class PdfInvoiceLayout(
             textSize = size
             typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
         }
-        return StaticLayout.Builder.obtain(text, 0, text.length, textPaint, width.toInt())
+        val builder = StaticLayout.Builder.obtain(text, 0, text.length, textPaint, width.toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_RTL)
-            .setIncludePad(false).setLineSpacing(3f, 1f).build()
+            .setIncludePad(true).setLineSpacing(4f, 1f)
+        if (android.os.Build.VERSION.SDK_INT >= 28) builder.setUseLineSpacingFromFallbacks(true)
+        return builder.build()
     }
 
     private fun drawLayout(block: StaticLayout, x: Float, top: Float) {
@@ -332,26 +334,52 @@ private class PdfInvoiceLayout(
         block("بيانات المنشأة", bold = true)
         if (company.vatNumber.isNotBlank()) block("الرقم الضريبي: ${company.vatNumber}")
         if (company.commercialRegistration.isNotBlank()) block("السجل التجاري: ${company.commercialRegistration}")
-        block("العنوان: ${company.address} | الهاتف: ${company.phone}")
-        block("العميل: ${invoice.clientName} | ${invoice.clientCompany}", bold = true)
-        block("رقم العميل الضريبي: ${invoice.clientVatNumber.ifBlank { "غير محدد" }}")
-        block("العنوان: ${invoice.clientAddress} | الهاتف: ${invoice.clientPhone}")
+        block(listOfNotNull(
+            company.address.takeIf { it.isNotBlank() }?.let { "العنوان: $it" },
+            company.phone.takeIf { it.isNotBlank() }?.let { "الهاتف: $it" }
+        ).joinToString(" | "))
+        val buyerCompany = invoice.clientCompany.takeIf { it.isNotBlank() && it != invoice.clientName }
+        block("العميل: " + invoice.clientName + (buyerCompany?.let { " | $it" } ?: ""), bold = true)
+        if (invoice.clientVatNumber.isNotBlank()) block("رقم العميل الضريبي: ${invoice.clientVatNumber}")
+        block(listOfNotNull(
+            invoice.clientAddress.takeIf { it.isNotBlank() }?.let { "العنوان: $it" },
+            invoice.clientPhone.takeIf { it.isNotBlank() }?.let { "الهاتف: $it" },
+            invoice.clientEmail.takeIf { it.isNotBlank() }?.let { "البريد: $it" }
+        ).joinToString(" | "))
         block(if (isQuote) "تاريخ العرض: ${invoice.issueDate} | صالح حتى: ${invoice.dueDate}" else "تاريخ الفاتورة: ${invoice.issueDate} | الاستحقاق: ${invoice.dueDate}")
         if (invoice.issuedAt.isNotBlank()) block((if (isQuote) "وقت إنشاء العرض (UTC): " else "وقت الإصدار الفعلي (UTC): ") + invoice.issuedAt)
         block(if (isQuote) "المشروع: ${invoice.projectCategory} | عرض أسعار" else "المشروع: ${invoice.projectCategory} | الحالة: ${invoice.status.labelAr}")
-        block("البنود — القيم بالـ${company.currencyAr}", 12f, true)
+        block("البنود (${company.currencyAr})", 12f, true)
         itemTable()
         totalsSection()
-        block("البنك: ${invoice.bankName} | الآيبان: ${invoice.iban}")
-        block("شروط السداد: ${invoice.paymentTerms}")
-        block("الملاحظات: ${invoice.notes}")
+        block(listOfNotNull(
+            invoice.bankName.takeIf { it.isNotBlank() }?.let { "البنك: $it" },
+            invoice.iban.takeIf { it.isNotBlank() }?.let { "الآيبان: $it" }
+        ).joinToString(" | "))
+        if (invoice.paymentTerms.isNotBlank()) {
+            block("شروط السداد", bold = true)
+            block(invoice.paymentTerms)
+        }
+        if (invoice.notes.isNotBlank()) {
+            block("الملاحظات", bold = true)
+            block(invoice.notes)
+        }
         if (qr != null) {
             ensureSpace(160f)
             canvas.drawBitmap(qr, null, RectF(margin + bodyWidth - 135, y, margin + bodyWidth, y + 135), paint)
             drawLayout(layout("QR بيانات الفاتورة", bodyWidth - 150, 10f), margin, y + 30)
             y += 150
         }
-        if (isQuote) block("عرض سعر للتقييم والموافقة، ويُحوّل إلى فاتورة عند الاعتماد.", 9f)
+        if (isQuote) {
+            val explanation = layout("عرض سعر للتقييم والموافقة، ويُحوّل إلى فاتورة عند الاعتماد.", bodyWidth - 24f, 9f)
+            val height = explanation.height + 24f
+            y += 12f
+            ensureSpace(height)
+            paint.color = Color.rgb(242, 245, 248)
+            canvas.drawRoundRect(RectF(margin, y, margin + bodyWidth, y + height), 5f, 5f, paint)
+            drawLayout(explanation, margin + 12f, y + 12f)
+            y += height
+        }
         // Technical data encoding is not a clearance/certification claim.
         finishPage()
     }
